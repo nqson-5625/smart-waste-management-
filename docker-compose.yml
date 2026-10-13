@@ -1,0 +1,98 @@
+services:
+  mongo:
+    image: mongo:8.0
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: ${MONGO_DB:-smartwaste_v2}
+    ports:
+      - "127.0.0.1:${MONGO_PORT:-27017}:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mongo-replica-init:
+    image: mongo:8.0
+    command:
+      - mongosh
+      - mongodb://mongo:27017/admin?directConnection=true
+      - --quiet
+      - --eval
+      - >-
+        try { rs.status() }
+        catch (error) {
+          rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongo:27017'}]})
+        }
+        while (!db.hello().isWritablePrimary) { sleep(1000) }
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: "no"
+
+  db-schema:
+    image: mongo:8.0
+    command:
+      - mongosh
+      - mongodb://mongo:27017/?replicaSet=rs0
+      - --quiet
+      - --file
+      - /mql/01_schema.js
+    environment:
+      SW_DB: ${MONGO_DB:-smartwaste_v2}
+    volumes:
+      - ./mql/01_schema.js:/mql/01_schema.js:ro
+    depends_on:
+      mongo-replica-init:
+        condition: service_completed_successfully
+    restart: "no"
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      - "${MQTT_PORT:-1883}:1883"
+    volumes:
+      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+
+  db-seed:
+    build:
+      context: ./iot-ingestion
+    command: ["python", "seed_registry.py"]
+    environment:
+      MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      MONGO_DB: ${MONGO_DB:-smartwaste_v2}
+    depends_on:
+      db-schema:
+        condition: service_completed_successfully
+    restart: "no"
+
+  iot-ingestion:
+    build:
+      context: ./iot-ingestion
+    command: ["python", "consumer.py"]
+    restart: unless-stopped
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 1883
+      MQTT_TLS: "0"
+      MQTT_CLIENT_ID: ${MQTT_CLIENT_ID:-smartwaste-ingestor}
+      MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      MONGO_DB: ${MONGO_DB:-smartwaste_v2}
+    depends_on:
+      mongo:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+      db-seed:
+        condition: service_completed_successfully
+
+volumes:
+  mongo_data:
+  mosquitto_data:
+  mosquitto_log:
