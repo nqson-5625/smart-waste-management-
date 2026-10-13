@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "gateway_id": "gw-001",
+  "state": "online",
+  "gateway_fw": "1.0.0",
+  "gateway_boot_id": 1,
+  "uptime_s": 30,
+  "reported_at_ms": 1791478800000,
+  "queue_depth": 1,
+  "queue_capacity": 32,
+  "invalid_packets": 0,
+  "queue_full_events": 0,
+  "storage_errors": 0,
+  "wifi_rssi_dbm": -55
+}
