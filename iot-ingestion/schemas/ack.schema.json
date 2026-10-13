@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "message_id",
+    "status"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "message_id": {
+      "type": "string",
+      "pattern": "^bin-[0-9]{3,6}-[0-9a-f]{8}-[0-9a-f]{8}$"
+    },
+    "status": {
+      "enum": [
+        "stored",
+        "duplicate"
+      ]
+    }
+  }
+}

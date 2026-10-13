@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "gateway_id",
+    "state"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "gateway_id": {
+      "type": "string",
+      "pattern": "^gw-[a-zA-Z0-9-]{1,24}$"
+    },
+    "state": {
+      "enum": [
+        "online",
+        "offline"
+      ]
+    },
+    "gateway_fw": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "gateway_boot_id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295
+    },
+    "uptime_s": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "reported_at_ms": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "queue_depth": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 32
+    },
+    "queue_capacity": {
+      "const": 32
+    },
+    "invalid_packets": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "queue_full_events": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "storage_errors": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "wifi_rssi_dbm": {
+      "type": "integer",
+      "minimum": -200,
+      "maximum": 30
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "online"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "schema_version",
+          "gateway_id",
+          "state",
+          "gateway_fw",
+          "gateway_boot_id",
+          "uptime_s",
+          "reported_at_ms",
+          "queue_depth",
+          "queue_capacity",
+          "invalid_packets",
+          "queue_full_events",
+          "storage_errors",
+          "wifi_rssi_dbm"
+        ]
+      }
+    }
+  ]
+}

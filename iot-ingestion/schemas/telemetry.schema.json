@@ -1,0 +1,310 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:smartwaste:telemetry:v1",
+  "title": "Smart Waste telemetry v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "message_id",
+    "device_id",
+    "gateway_id",
+    "boot_id",
+    "seq",
+    "node_uptime_s",
+    "sample_age_at_rx_s",
+    "reason",
+    "quality",
+    "distance_mm",
+    "fill_pct",
+    "battery_mv",
+    "alarm_active",
+    "lid_open",
+    "valid_samples",
+    "config_rev",
+    "dropped_reports",
+    "node_fw",
+    "gateway_fw",
+    "rssi_dbm",
+    "snr_db",
+    "gateway_boot_id",
+    "gateway_rx_uptime_ms",
+    "gateway_received_at_ms",
+    "sampled_at_ms",
+    "time_quality"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "message_id": {
+      "type": "string",
+      "pattern": "^bin-[0-9]{3,6}-[0-9a-f]{8}-[0-9a-f]{8}$"
+    },
+    "device_id": {
+      "type": "string",
+      "pattern": "^bin-[0-9]{3,6}$"
+    },
+    "gateway_id": {
+      "type": "string",
+      "pattern": "^gw-[a-zA-Z0-9-]{1,24}$"
+    },
+    "boot_id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295
+    },
+    "node_uptime_s": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "sample_age_at_rx_s": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "reason": {
+      "enum": [
+        "boot",
+        "periodic",
+        "full",
+        "cleared",
+        "sensor_fault",
+        "sensor_recovered"
+      ]
+    },
+    "quality": {
+      "enum": [
+        "ok",
+        "timeout",
+        "unstable",
+        "lid_open",
+        "out_of_range"
+      ]
+    },
+    "distance_mm": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 20,
+      "maximum": 4000
+    },
+    "fill_pct": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 100
+    },
+    "battery_mv": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 2000,
+      "maximum": 4500
+    },
+    "alarm_active": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "lid_open": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "valid_samples": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 7
+    },
+    "config_rev": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "dropped_reports": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535
+    },
+    "node_fw": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "gateway_fw": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "rssi_dbm": {
+      "type": "integer",
+      "minimum": -200,
+      "maximum": 30
+    },
+    "snr_db": {
+      "type": "number",
+      "minimum": -100,
+      "maximum": 100
+    },
+    "gateway_boot_id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295
+    },
+    "gateway_rx_uptime_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "gateway_received_at_ms": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "sampled_at_ms": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "time_quality": {
+      "enum": [
+        "gateway_estimated",
+        "unsynced"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "quality": {
+            "const": "ok"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "distance_mm": {
+            "type": "integer"
+          },
+          "fill_pct": {
+            "type": "number"
+          },
+          "valid_samples": {
+            "minimum": 5
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "distance_mm": {
+            "type": "null"
+          },
+          "fill_pct": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "time_quality": {
+            "const": "unsynced"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "gateway_received_at_ms": {
+            "type": "null"
+          },
+          "sampled_at_ms": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "gateway_received_at_ms": {
+            "type": "integer"
+          },
+          "sampled_at_ms": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "reason": {
+            "const": "full"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "quality": {
+            "const": "ok"
+          },
+          "alarm_active": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "reason": {
+            "const": "cleared"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "quality": {
+            "const": "ok"
+          },
+          "alarm_active": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "quality": {
+            "const": "lid_open"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "lid_open": {
+            "const": true
+          }
+        }
+      }
+    }
+  ]
+}
