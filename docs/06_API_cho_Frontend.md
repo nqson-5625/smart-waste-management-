@@ -2,7 +2,7 @@
 
 **Người viết:** Đỗ Thanh Sơn (Backend) · **Người đọc:** Dũng (Web/App) · **Trạng thái:** đề xuất để chốt, **chưa có server chạy**.
 
-Phạm vi: 24 endpoint, lấy theo danh sách trong `smartwastew1.txt` của Dũng (web và mobile) cộng nhóm quản lý người dùng. Phủ các yêu cầu chức năng của đề bài: quản lý thùng, bản đồ, cảnh báo, thống kê theo loại, lập và giao tuyến, xác nhận thu gom, quản lý người dùng. Backend chỉ đọc/ghi dữ liệu nghiệp vụ; dữ liệu cảm biến vào MongoDB qua `iot-ingestion` (xem `03_Backend_contract.md`).
+Phạm vi: 25 endpoint, lấy theo danh sách trong `smartwastew1.txt` của Dũng (web và mobile) cộng nhóm quản lý người dùng. Phủ các yêu cầu chức năng của đề bài: quản lý thùng, bản đồ, cảnh báo, thống kê theo loại, lập và giao tuyến, xác nhận thu gom, quản lý người dùng. Backend chỉ đọc/ghi dữ liệu nghiệp vụ; dữ liệu cảm biến vào MongoDB qua `iot-ingestion` (xem `03_Backend_contract.md`).
 
 ## 1. Quy ước chung
 
@@ -38,13 +38,14 @@ Phạm vi: 24 endpoint, lấy theo danh sách trong `smartwastew1.txt` của Dũ
 | 15  | POST   | `/alerts/{id}/ack`       | admin, dispatcher, collector                      | Cao     |
 | 16  | POST   | `/users`                 | admin                                             | Trung   |
 | 17  | PATCH  | `/users/{id}`            | admin                                             | Trung   |
-| 18  | GET    | `/users`                 | admin                                             | Thấp    |
+| 18  | GET    | `/users`                 | admin, dispatcher (chỉ thấy collector)            | Trung   |
 | 19  | POST   | `/auth/change-password`  | mọi user đã đăng nhập                             | Thấp    |
 | 20  | POST   | `/devices/{id}/configs`  | admin                                             | Trung   |
 | 21  | POST   | `/routes`                | admin, dispatcher                                 | Thấp    |
 | 22  | GET    | `/routes`                | admin, dispatcher, collector (chỉ tuyến của mình) | Thấp    |
 | 23  | PATCH  | `/routes/{id}/status`    | xem mục 3.14                                      | Thấp    |
 | 24  | GET    | `/reports/routes`        | admin, dispatcher                                 | Thấp    |
+| 25  | GET    | `/collection-events`     | admin, dispatcher, collector (chỉ của mình)       | Trung   |
 
 Làm theo thứ tự ưu tiên: các endpoint "Cao" có trước để Dũng dựng UI.
 
@@ -91,6 +92,7 @@ Query: `ward_code`, `waste_type` (`general|organic|recyclable|hazardous|other`),
         "latest_sampled_at": "2026-10-16T08:00:00Z",
         "alarm_active": true,
         "last_contact_at": "2026-10-16T08:00:03Z",
+        "last_collected_at": "2026-10-16T09:05:00Z",
         "fresh": true
       }
     }
@@ -101,6 +103,7 @@ Query: `ward_code`, `waste_type` (`general|organic|recyclable|hazardous|other`),
 
 - `fill_pct`, `distance_mm`, `sampled_at` lấy từ **lần đo tốt gần nhất**. `latest_quality` là chất lượng của bản tin mới nhất. Khi `latest_quality != "ok"` mà vẫn còn số cũ, hiển thị số cũ kèm biểu tượng lỗi cảm biến.
 - `fresh` do Backend tính: lần đo tốt trong 8 giờ gần nhất, không ở tương lai, và thời gian đo đáng tin. Frontend không tự tính.
+- `last_collected_at`: lần thu gom gần nhất đã xác nhận (null nếu chưa có). Nếu `last_collected_at` mới hơn `sampled_at` mà `alarm_active` vẫn `true`, UI hiển thị "đã thu gom, chờ cảm biến xác nhận".
 - `state` là `null` nếu thùng chưa gắn thiết bị hoặc chưa có dữ liệu.
 
 ### 3.3 `GET /bins/{id}`
@@ -146,7 +149,11 @@ Bắt buộc header `Idempotency-Key` (UUID do client sinh, dùng lại khi gử
 - `completed_at` không được ở tương lai quá 5 phút.
 - `worker_id` lấy từ token.
 - Thu gom theo tuyến: gửi thêm `route_id` và `stop_order`. Tuyến phải `in_progress`, được giao cho chính user này, điểm dừng khớp `bin_id` và chưa thu gom; thành công thì điểm dừng chuyển `collected`. Thu gom ngoài tuyến: bỏ hai trường này (null).
-- Thu gom **không** tự đặt `fill_pct` về 0 và không đóng cảnh báo; UI có thể hiển thị "đã thu gom, chờ cảm biến xác nhận".
+- Thu gom **không** tự đặt `fill_pct` về 0 và không đóng cảnh báo; UI có thể hiển thị "đã thu gom, chờ cảm biến xác nhận" (xem `last_collected_at` ở mục 3.2).
+
+### 3.10b `GET /collection-events`
+
+Lịch sử thu gom, mới nhất trước. Query: `bin_id`, `worker_id`, `route_id`, `from`, `to`, `limit`, `cursor`. Collector chỉ thấy lượt của mình (Backend tự lọc). Phần tử: `{"id","bin_id","worker_id","worker_name","route_id","stop_order","completed_at","recorded_at","waste_type","measured_weight_kg","weight_source","fill_before_pct","fill_after_pct","note"}`.
 
 ### 3.11 `GET /stats/waste-by-type`
 
@@ -187,7 +194,7 @@ Dùng để admin tạo tài khoản cho nhân viên thu gom và điều phối.
 
 - `POST /users` (201): body `{"email","display_name","password","roles":["collector"],"phone?"}`. `roles` gồm 1 đến 3 giá trị trong `admin|dispatcher|collector`; mật khẩu tối thiểu 8 ký tự; tài khoản tạo xong ở trạng thái `active`. 409 nếu trùng email (không phân biệt hoa thường). Trả `{"id","email","display_name","roles","status","phone","created_at"}`.
 - `PATCH /users/{id}`: sửa một phần `display_name`, `roles`, `status` (`active|disabled`), `phone`, và `password` (admin đặt lại mật khẩu khi người dùng quên). Admin không được tự khóa hoặc tự bỏ quyền admin của chính mình (409). Tài khoản `disabled` mất hiệu lực ngay ở request kế tiếp.
-- `GET /users`: query `role`, `status`, `limit`, `cursor`; trả `{"items":[...],"next_cursor":...}` với phần tử như kết quả `POST /users`, thêm `last_login_at`.
+- `GET /users`: query `role`, `status`, `limit`, `cursor`; trả `{"items":[...],"next_cursor":...}` với phần tử như kết quả `POST /users`, thêm `last_login_at`. Dispatcher cũng gọi được để chọn người khi giao tuyến, nhưng chỉ nhận về tài khoản `collector` đang `active` và không có `email`, `phone`, `last_login_at`. Ví dụ: `GET /users?role=collector&status=active`.
 
 ### 3.14 Tuyến thu gom
 
@@ -228,7 +235,8 @@ Khai báo thông số hiệu chuẩn đang nạp trong firmware của thiết b�
 
 - WebSocket đẩy cập nhật: không làm, polling 30 giây là đủ.
 - Quên mật khẩu qua email: không làm (admin đặt lại bằng `PATCH /users/{id}`).
-- Nếu Backend trễ lịch, thứ tự cắt: `GET /reports/routes`, rồi nhóm `/routes`, rồi `change-password` và `GET /users`. Sẽ báo trước nếu phải cắt.
+- Nếu Backend trễ lịch, thứ tự cắt: `GET /reports/routes`, rồi nhóm `/routes`, rồi `change-password`. Sẽ báo trước nếu phải cắt.
+- `GET /reports/routes` chỉ có km thực tế khi collector nhập `actual_distance_m` lúc hoàn thành tuyến (mục 3.14); nếu không nhập thì chỉ có mức giảm theo mô phỏng.
 
 ## 6. Chú ý!
 
