@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from pymongo.errors import PyMongoError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import auth
+from . import alerts, auth, bins
 from .db import get_database
 from .errors import CODES
 
@@ -87,4 +87,6 @@ def health():
 
 
 api.include_router(auth.router)
+api.include_router(bins.router)
+api.include_router(alerts.router)
 app.include_router(api)

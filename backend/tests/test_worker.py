@@ -1,71 +1,7 @@
-import hashlib
 from datetime import datetime, timedelta, timezone
 
-import pytest
-
+from helpers import BIN, run_all, send
 from smartwaste_backend import worker
-
-DEVICE, BIN, ASSIGNMENT = "bin-555", "WB-T1", "asgn-bin-555-1"
-EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
-COLLECTIONS = ("telemetry", "bin_state", "alerts", "audit_logs", "device_configs")
-
-
-@pytest.fixture
-def wdb(db):
-    for name in COLLECTIONS:
-        db[name].delete_many({})
-    now = datetime.now(timezone.utc)
-    db.device_configs.insert_one({
-        "_id": f"{DEVICE}:1", "device_id": DEVICE, "config_rev": 1, "sensor_id": "level-01",
-        "empty_distance_mm": 1000, "full_distance_mm": 100, "sample_interval_s": 60,
-        "report_interval_s": 21600, "full_threshold_pct": 80, "clear_threshold_pct": 70,
-        "confirm_cycles": 2, "status": "verified", "verified_at": now, "created_by": "usr-t",
-        "created_at": now, "note": None,
-    })
-    db.bin_state.insert_one({
-        "_id": BIN, "device_id": DEVICE, "assignment_id": ASSIGNMENT, "assignment_version": 1,
-        "latest_boot_id": 0, "latest_seq": 0, "latest_message_id": None,
-        "latest_quality": "unknown", "latest_sampled_at": None, "latest_received_at": None,
-        "last_contact_at": None, "last_good": None, "alarm_active": None, "updated_at": now,
-    })
-    return db
-
-
-def send(db, seq, reason="periodic", quality="ok", fill=50.0, alarm=False, boot=7,
-         config_rev=1, mapped=True):
-    """Insert one schema-valid pending telemetry document, as ingestion would."""
-    ok = quality == "ok"
-    rx_ms = 1_790_000_000_000 + seq * 60_000
-    message_id = f"{DEVICE}-{boot:08x}-{seq:08x}"
-    db.telemetry.insert_one({
-        "_id": message_id, "schema_version": 1, "message_id": message_id, "device_id": DEVICE,
-        "gateway_id": "gw-t", "boot_id": boot, "seq": seq, "node_uptime_s": seq * 60,
-        "sample_age_at_rx_s": 2, "reason": reason, "quality": quality,
-        "distance_mm": int(1000 - fill * 9) if ok else None, "fill_pct": fill if ok else None,
-        "battery_mv": None, "alarm_active": alarm, "lid_open": quality == "lid_open" or None,
-        "valid_samples": 7 if ok else 2, "config_rev": config_rev, "dropped_reports": 0,
-        "node_fw": "1.0.0", "gateway_fw": "1.0.0", "rssi_dbm": -90, "snr_db": 7.5,
-        "gateway_boot_id": 1, "gateway_rx_uptime_ms": seq * 60_000,
-        "gateway_received_at_ms": rx_ms, "sampled_at_ms": rx_ms - 2000,
-        "time_quality": "gateway_estimated", "db_schema_version": 2,
-        "bin_id": BIN if mapped else None, "assignment_id": ASSIGNMENT if mapped else None,
-        "mapping_status": "resolved" if mapped else "unassigned",
-        "sampled_at": EPOCH + timedelta(milliseconds=rx_ms - 2000),
-        "gateway_received_at": EPOCH + timedelta(milliseconds=rx_ms),
-        "received_at": EPOCH + timedelta(milliseconds=rx_ms + 500),
-        "content_hash": hashlib.sha256(message_id.encode()).hexdigest(),
-        "processing": {"state": "pending", "attempts": 0, "lease_owner": None,
-                       "lease_until": None, "next_retry_at": EPOCH, "processed_at": None,
-                       "last_error": None},
-    })
-    return message_id
-
-
-def run_all(db):
-    states = []
-    while (state := worker.process_one(db)) is not None:
-        states.append(state)
-    return states
 
 
 def active_alerts(db, alert_type):
