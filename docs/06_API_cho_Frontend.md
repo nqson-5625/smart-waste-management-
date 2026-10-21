@@ -62,7 +62,7 @@ Trả `{"id","display_name","roles":[...]}` của user trong token. Dùng để 
 
 ### 3.1c `POST /auth/change-password`
 
-Body `{"current_password","new_password"}` (mật khẩu mới tối thiểu 8 ký tự). Sai mật khẩu hiện tại trả 401 hoặc 422 (`details` ghi rõ trường). Thành công trả 200 `{"ok":true}`; token cũ vẫn dùng được cho tới khi hết hạn. User mới do admin tạo nên dùng endpoint này để đổi mật khẩu ban đầu.
+Body `{"current_password","new_password"}` (mật khẩu mới tối thiểu 8 ký tự). Sai mật khẩu hiện tại trả **422** (`details.field = "current_password"`); không dùng 401 vì web coi mọi 401 là hết phiên và tự đăng xuất. Thành công trả 200 `{"ok":true}`; token cũ vẫn dùng được cho tới khi hết hạn. User mới do admin tạo nên dùng endpoint này để đổi mật khẩu ban đầu.
 
 ### 3.2 `GET /bins`
 
@@ -108,7 +108,7 @@ Query: `ward_code`, `waste_type` (`general|organic|recyclable|hazardous|other`),
 
 ### 3.3 `GET /bins/{id}`
 
-Trả như một phần tử của `/bins`, thêm `notes`, `device` (`{id, lifecycle, enabled}` hoặc null) và `open_alerts` (danh sách cảnh báo đang mở của thùng). 404 nếu không tồn tại.
+Trả như một phần tử của `/bins`, thêm `notes`, `device` (`{id, lifecycle, enabled}` hoặc null) và `open_alerts` (cảnh báo còn hiệu lực của thùng: cả `open` lẫn `acknowledged`, mới nhất trước; gồm cảnh báo đầy và lỗi cảm biến). 404 nếu không tồn tại.
 
 ### 3.4 `GET /bins/{id}/telemetry`
 
@@ -127,7 +127,7 @@ Không cần body. Đặt `status = acknowledged`, ghi `acknowledged_by` (từ t
 
 ### 3.6 `POST /bins` (201)
 
-Body: `code`, `name`, `address`, `ward_code`, `waste_type`, `location` (hoặc `lat`,`lng`), `capacity_l?`, `notes?`. Backend tự đặt `id`, `status=active`, `environment=field`. 409 nếu trùng `code`.
+Body: `code`, `name`, `address`, `ward_code`, `waste_type`, `location` (hoặc `lat`,`lng`), `capacity_l?`, `notes?`. `id` của thùng chính là `code` (ví dụ `WB-001`); Backend tự đặt `status=active`, `environment=field`. 409 nếu trùng `code`.
 
 ### 3.7 `PATCH /bins/{id}`
 
