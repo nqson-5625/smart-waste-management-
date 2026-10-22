@@ -3,7 +3,7 @@
 import hashlib
 from datetime import datetime, timedelta, timezone
 
-from smartwaste_backend import worker
+from smartwaste_backend.jobs import projection_worker
 
 DEVICE, BIN, ASSIGNMENT = "bin-555", "WB-T1", "asgn-bin-555-1"
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
@@ -42,7 +42,7 @@ def send(db, seq, reason="periodic", quality="ok", fill=50.0, alarm=False, boot=
 
 def run_all(db):
     states = []
-    while (state := worker.process_one(db)) is not None:
+    while (state := projection_worker.process_one(db)) is not None:
         states.append(state)
     return states
 

@@ -16,8 +16,8 @@ os.environ.setdefault("JWT_SECRET", "test-secret-not-for-production-use-01234567
 from fastapi.testclient import TestClient  # noqa: E402
 
 from smartwaste_backend.app import app  # noqa: E402
-from smartwaste_backend.auth import hash_password  # noqa: E402
-from smartwaste_backend.db import get_database  # noqa: E402
+from smartwaste_backend.core.db import get_database  # noqa: E402
+from smartwaste_backend.core.security import hash_password  # noqa: E402
 
 from helpers import ASSIGNMENT, BIN, DEVICE  # noqa: E402
 

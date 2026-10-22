@@ -1,6 +1,6 @@
 """Read-only schema-v2 telemetry queries for backend APIs."""
 
-from .db import get_database
+from ..core.db import get_database
 
 
 PUBLIC_PROJECTION = {

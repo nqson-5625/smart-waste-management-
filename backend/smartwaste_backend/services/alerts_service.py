@@ -1,22 +1,13 @@
-"""Alert list and acknowledgement."""
+"""Alert queries and acknowledgement rules."""
 
-from typing import Literal
-
-from fastapi import APIRouter, Depends, Request
 from pymongo import ReturnDocument
 
-from .auth import require_roles
-from .common import Limit, decode_cursor, encode_cursor, from_ms, iso, to_ms, utcnow
-from .db import get_database
-from .errors import ApiError
+from ..core.common import decode_cursor, encode_cursor, from_ms, iso, to_ms, utcnow
+from ..core.db import get_database
+from ..core.errors import ApiError
 
-
-router = APIRouter(prefix="/alerts", tags=["alerts"])
 
 STATUSES = {"open", "acknowledged", "resolved"}
-AlertType = Literal["full", "sensor_fault", "device_stale", "gateway_offline"]
-ScopeType = Literal["bin", "device", "gateway"]
-any_user = require_roles("admin", "dispatcher", "collector")
 
 
 def alert_view(alert):
@@ -30,22 +21,20 @@ def alert_view(alert):
     }
 
 
-@router.get("")
-def list_alerts(
-    status: str = "open",
-    type: AlertType | None = None,
-    scope_type: ScopeType | None = None,
-    bin_id: str | None = None,
-    limit: int = Limit,
-    cursor: str | None = None,
-    user=Depends(any_user),
-):
+def active_for_bin(bin_id):
+    """Alerts still in force for a bin (open or acknowledged), newest first."""
+    alerts = get_database().alerts.find({"bin_id": bin_id, "active": True}).sort("opened_at", -1)
+    return [alert_view(alert) for alert in alerts]
+
+
+def list_alerts(status, alert_type, scope_type, bin_id, limit, cursor):
+    """Page alerts newest first; ``status`` is a comma-separated list."""
     statuses = {part.strip() for part in status.split(",") if part.strip()}
     if not statuses or statuses - STATUSES:
         raise ApiError(422, "status chỉ nhận open, acknowledged, resolved", {"field": "status"})
 
     query = {"status": {"$in": sorted(statuses)}}
-    for field, value in (("type", type), ("scope_type", scope_type), ("bin_id", bin_id)):
+    for field, value in (("type", alert_type), ("scope_type", scope_type), ("bin_id", bin_id)):
         if value is not None:
             query[field] = value
     if cursor:
@@ -65,8 +54,8 @@ def list_alerts(
     }
 
 
-@router.post("/{alert_id}/ack")
-def acknowledge(alert_id: str, request: Request, user=Depends(any_user)):
+def acknowledge(alert_id, user, request_id):
+    """Mark an open alert as taken in hand. Idempotent; resolved alerts cannot be acked."""
     database = get_database()
     now = utcnow()
     alert = database.alerts.find_one_and_update(
@@ -81,7 +70,7 @@ def acknowledge(alert_id: str, request: Request, user=Depends(any_user)):
             "actor_id": user["_id"], "action": "alert_ack", "entity_type": "alert",
             "entity_id": alert_id, "source_message_id": None, "occurred_at": now,
             "summary": f"{user['display_name']} xác nhận đã nhận cảnh báo {alert['type']}",
-            "request_id": request.state.request_id,
+            "request_id": request_id,
         })
         return alert_view(alert)
 
@@ -90,4 +79,4 @@ def acknowledge(alert_id: str, request: Request, user=Depends(any_user)):
         raise ApiError(404, "Không tìm thấy cảnh báo", {"alert_id": alert_id})
     if existing["status"] == "resolved":
         raise ApiError(409, "Cảnh báo đã được đóng", {"alert_id": alert_id})
-    return alert_view(existing)  # already acknowledged: idempotent
+    return alert_view(existing)

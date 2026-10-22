@@ -1,6 +1,6 @@
 """Seed simulated field bins so the web map and worker have data to show.
 
-Usage: python -m smartwaste_backend.seed_demo [count]   (default 10, max 200)
+Usage: python -m smartwaste_backend.scripts.seed_demo [count]   (default 10, max 200)
 
 Each bin WB-1xx gets its own simulated device bin-9xxxx on gateway gw-simulator,
 an active assignment and a verified calibration, so telemetry from
@@ -14,7 +14,7 @@ Re-running only adds what is missing.
 import sys
 from datetime import datetime, timezone
 
-from .db import get_database
+from ..core.db import get_database
 
 
 GATEWAY_ID = "gw-simulator"

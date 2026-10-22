@@ -1,25 +1,13 @@
-"""Bin read endpoints: list with current state, detail, telemetry history."""
+"""Bin queries: list with current state, detail, telemetry history."""
 
-from datetime import datetime
-from typing import Literal
-
-from fastapi import APIRouter, Depends, Query
-
-from .alerts import alert_view
-from .auth import current_user, require_roles
-from .common import (
-    CLOCK_SKEW, STALE_AFTER, Limit, decode_cursor, encode_cursor, from_ms, iso, is_fresh,
-    naive_utc, to_ms, utcnow,
+from ..core.common import (
+    CLOCK_SKEW, STALE_AFTER, decode_cursor, encode_cursor, from_ms, iso, is_fresh, to_ms, utcnow,
 )
-from .db import get_database
-from .errors import ApiError
-from .telemetry import list_telemetry
+from ..core.db import get_database
+from ..core.errors import ApiError
+from . import alerts_service
+from .telemetry_service import list_telemetry
 
-
-router = APIRouter(prefix="/bins", tags=["bins"])
-
-WasteType = Literal["general", "organic", "recyclable", "hazardous", "other"]
-BinStatus = Literal["active", "maintenance", "retired"]
 
 # Latest confirmed collection per bin; served by index collection_bin_time.
 LAST_COLLECTION = {
@@ -32,9 +20,12 @@ LAST_COLLECTION = {
         "as": "last_collection",
     }
 }
+JOIN_STATE = {"$lookup": {"from": "bin_state", "localField": "_id", "foreignField": "_id",
+                          "as": "state"}}
 
 
 def state_view(state, last_collected_at, now):
+    """Public bin state; None when no device is attached or nothing was received yet."""
     if not state or not state["device_id"] or not state["latest_message_id"]:
         return None
     good = state["last_good"] or {}
@@ -66,17 +57,8 @@ def bin_view(doc, now):
     }
 
 
-@router.get("")
-def list_bins(
-    ward_code: str | None = None,
-    waste_type: WasteType | None = None,
-    status: BinStatus | None = None,
-    full: bool | None = None,
-    fresh: bool | None = None,
-    limit: int = Limit,
-    cursor: str | None = None,
-    user=Depends(current_user),
-):
+def list_bins(ward_code, waste_type, status, full, fresh, limit, cursor):
+    """Page field bins by id, joined with their state and last collection."""
     now = utcnow()
     match = {"environment": "field"}
     for field, value in (("ward_code", ward_code), ("waste_type", waste_type), ("status", status)):
@@ -99,12 +81,7 @@ def list_bins(
 
     # ponytail: state filters run after the join, fine for a ward (~200 bins);
     # denormalise alarm/fresh onto bins if this grows to thousands.
-    pipeline = [
-        {"$match": match},
-        {"$sort": {"_id": 1}},
-        {"$lookup": {"from": "bin_state", "localField": "_id", "foreignField": "_id",
-                     "as": "state"}},
-    ]
+    pipeline = [{"$match": match}, {"$sort": {"_id": 1}}, JOIN_STATE]
     if state_match:
         pipeline.append({"$match": state_match})
     pipeline += [{"$limit": limit + 1}, LAST_COLLECTION]
@@ -118,19 +95,14 @@ def list_bins(
     }
 
 
-@router.get("/{bin_id}")
-def get_bin(bin_id: str, user=Depends(current_user)):
+def get_bin(bin_id):
+    """One bin with notes, attached device and alerts still in force."""
     database = get_database()
-    docs = list(database.bins.aggregate([
-        {"$match": {"_id": bin_id}},
-        {"$lookup": {"from": "bin_state", "localField": "_id", "foreignField": "_id",
-                     "as": "state"}},
-        LAST_COLLECTION,
-    ]))
+    docs = list(database.bins.aggregate([{"$match": {"_id": bin_id}}, JOIN_STATE,
+                                         LAST_COLLECTION]))
     if not docs:
         raise ApiError(404, "Không tìm thấy thùng", {"bin_id": bin_id})
     doc = docs[0]
-    view = bin_view(doc, utcnow())
 
     state = (doc["state"] or [None])[0]
     device = None
@@ -141,21 +113,12 @@ def get_bin(bin_id: str, user=Depends(current_user)):
             device = {"id": found["_id"], "lifecycle": found["lifecycle"],
                       "enabled": found["enabled"]}
 
-    open_alerts = database.alerts.find({"bin_id": bin_id, "active": True}).sort("opened_at", -1)
-    return {**view, "notes": doc["notes"], "device": device,
-            "open_alerts": [alert_view(alert) for alert in open_alerts]}
+    return {**bin_view(doc, utcnow()), "notes": doc["notes"], "device": device,
+            "open_alerts": alerts_service.active_for_bin(bin_id)}
 
 
-@router.get("/{bin_id}/telemetry")
-def bin_telemetry(
-    bin_id: str,
-    from_: datetime = Query(alias="from"),
-    to: datetime = Query(),
-    limit: int = Limit,
-    cursor: str | None = None,
-    user=Depends(require_roles("admin", "dispatcher")),
-):
-    start, end = naive_utc(from_), naive_utc(to)
+def bin_telemetry(bin_id, start, end, limit, cursor):
+    """Telemetry history in [start, end], newest first, paged on (sampled_at, _id)."""
     if start > end:
         raise ApiError(422, "from phải nhỏ hơn hoặc bằng to", {"field": "from"})
     if not get_database().bins.find_one({"_id": bin_id}, {"_id": 1}):

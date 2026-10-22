@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from helpers import BIN, run_all, send
-from smartwaste_backend import worker
+from smartwaste_backend.jobs import projection_worker
 
 
 def active_alerts(db, alert_type):
@@ -85,8 +85,8 @@ def test_leased_document_is_not_claimed_twice(wdb):
         "processing.lease_owner": "other-worker",
         "processing.lease_until": datetime.now(timezone.utc) + timedelta(seconds=30),
     }})
-    assert worker.process_one(wdb) is None
+    assert projection_worker.process_one(wdb) is None
     wdb.telemetry.update_one({"_id": message_id}, {"$set": {
         "processing.lease_until": datetime.now(timezone.utc) - timedelta(seconds=1),
     }})
-    assert worker.process_one(wdb) == "applied"  # expired lease: safe to take over
+    assert projection_worker.process_one(wdb) == "applied"  # expired lease: safe to take over

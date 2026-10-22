@@ -117,7 +117,7 @@ services:
   worker:
     build:
       context: ./backend
-    command: ["python", "-m", "smartwaste_backend.worker"]
+    command: ["python", "-m", "smartwaste_backend.jobs.projection_worker"]
     restart: unless-stopped
     environment: *backend-env
     depends_on:

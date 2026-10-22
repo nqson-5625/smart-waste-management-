@@ -1,14 +1,14 @@
 """Create demo accounts (admin, dispatcher, collector) once.
 
-Usage: DEMO_PASSWORD=... python -m smartwaste_backend.seed_users
+Usage: DEMO_PASSWORD=... python -m smartwaste_backend.scripts.seed_users
 Existing accounts are left untouched, so re-running never resets passwords.
 """
 
 import os
 from datetime import datetime, timezone
 
-from .auth import hash_password
-from .db import get_database
+from ..core.db import get_database
+from ..core.security import hash_password
 
 
 DEMO_USERS = (

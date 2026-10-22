@@ -1,4 +1,9 @@
-"""FastAPI application: error format, request IDs, CORS and routers."""
+"""FastAPI application: error format, request IDs, CORS and routers.
+
+Layout: core/ shared infrastructure, api/<feature>_router.py thin HTTP routers,
+services/<feature>_service.py business rules, jobs/<name>_worker.py background
+workers, scripts/ manual seeds.
+"""
 
 import logging
 import os
@@ -12,9 +17,9 @@ from fastapi.responses import JSONResponse
 from pymongo.errors import PyMongoError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import alerts, auth, bins
-from .db import get_database
-from .errors import CODES
+from .api import alerts_router, auth_router, bins_router
+from .core.db import get_database
+from .core.errors import CODES
 
 
 log = logging.getLogger("smartwaste.api")
@@ -86,7 +91,7 @@ def health():
     return {"status": "ok", "mongo": "ok"}
 
 
-api.include_router(auth.router)
-api.include_router(bins.router)
-api.include_router(alerts.router)
+api.include_router(auth_router.router)
+api.include_router(bins_router.router)
+api.include_router(alerts_router.router)
 app.include_router(api)

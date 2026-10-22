@@ -1,7 +1,7 @@
 from fastapi import Depends
 
 from smartwaste_backend.app import app
-from smartwaste_backend.auth import require_roles
+from smartwaste_backend.core.security import require_roles
 
 
 @app.get("/api/v1/_test/admin-only")
