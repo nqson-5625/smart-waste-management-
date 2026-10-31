@@ -92,6 +92,38 @@ services:
       db-seed:
         condition: service_completed_successfully
 
+  api:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment: &backend-env
+      MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      MONGO_DB: ${MONGO_DB:-smartwaste_v2}
+      # Development default only; set a long random JWT_SECRET in .env.
+      JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-jwt-secret}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    depends_on:
+      db-seed:
+        condition: service_completed_successfully
+
+  worker:
+    build:
+      context: ./backend
+    command: ["python", "-m", "smartwaste_backend.jobs.projection_worker"]
+    restart: unless-stopped
+    environment: *backend-env
+    depends_on:
+      db-seed:
+        condition: service_completed_successfully
+
 volumes:
   mongo_data:
   mosquitto_data:
