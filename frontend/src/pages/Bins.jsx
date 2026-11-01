@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { MapContainer, TileLayer, CircleMarker, useMapEvents } from 'react-leaflet'
 import { Link } from 'react-router-dom'
-import { api } from '../api'
+import { api, auth } from '../api'
 
 const CENTER = [21.005, 105.8442] // [lat, lng] cho Leaflet
 export const WASTE = { general: 'Rác thường', organic: 'Hữu cơ', recyclable: 'Tái chế', hazardous: 'Nguy hại', other: 'Khác' }
@@ -67,6 +67,7 @@ function BinModal({ bin, onClose }) {
 
 export default function Bins() {
   const qc = useQueryClient()
+  const isAdmin = auth.isAdmin
   const { data, isLoading, error } = useQuery({
     queryKey: ['bins'], queryFn: () => api('GET', '/bins?status=active&limit=100'), refetchInterval: 30000,
   })
@@ -90,7 +91,7 @@ export default function Bins() {
       <table className="tbl">
         <thead><tr>
           <th><input type="checkbox" checked={rows.length > 0 && rows.every(r => sel.includes(r.id))} onChange={e => setSel(e.target.checked ? rows.map(r => r.id) : [])} /></th>
-          <th>ID</th><th>Tên</th><th>Địa chỉ</th><th>Trạng thái</th><th>Thao tác</th>
+          <th>ID</th><th>Tên</th><th>Địa chỉ</th><th>Trạng thái</th>{isAdmin && <th>Thao tác</th>}
         </tr></thead>
         <tbody>
           {rows.map(b => { const s = binStatus(b); return (
@@ -99,14 +100,20 @@ export default function Bins() {
               <td><Link to={`/bins/${b.id}`}>{b.code}</Link></td><td>{b.name}</td><td>{b.address}</td>
               <td><span className={`badge ${s.key}`}>{s.label}</span>{b.state?.fill_pct != null && s.key !== 'none' && ` ${Math.round(b.state.fill_pct)}%`}
                 {b.state && b.state.latest_quality !== 'ok' && <span title="Cảm biến báo lỗi"> ⚠️</span>}</td>
-              <td><button className="mini" onClick={() => setModal(b)}>Sửa</button>
-                <button className="mini del" title="Ngừng sử dụng" onClick={() => onRetire(b)}>🗑</button></td>
+              {isAdmin && <td>
+                <button className="mini" onClick={() => setModal(b)}>Sửa</button>
+                <button className="mini del" title="Ngừng sử dụng" onClick={() => onRetire(b)}>🗑</button>
+              </td>}
             </tr>) })}
-          {rows.length === 0 && <tr><td colSpan="6" className="empty">Chưa có thùng nào. Bấm THÊM THÙNG RÁC để tạo thùng đầu tiên.</td></tr>}
+          {rows.length === 0 && <tr><td colSpan={isAdmin ? 6 : 5} className="empty">{isAdmin ? 'Chưa có thùng nào. Bấm THÊM THÙNG RÁC để tạo thùng đầu tiên.' : 'Chưa có thùng nào.'}</td></tr>}
         </tbody>
       </table>
       <div className="foot">
-        <button className="btn blue" onClick={() => setModal({})}>THÊM THÙNG RÁC</button>
+        {isAdmin ? (
+          <button className="btn blue" onClick={() => setModal({})}>THÊM THÙNG RÁC</button>
+        ) : (
+          <span style={{ marginRight: 'auto' }} />
+        )}
         <span>{items.length ? `${page * SIZE + 1}–${Math.min((page + 1) * SIZE, items.length)} / ${items.length}` : '0'}</span>
         <button className="link" disabled={page === 0} onClick={() => setPage(page - 1)}>‹</button>
         <button className="link" disabled={(page + 1) * SIZE >= items.length} onClick={() => setPage(page + 1)}>›</button>

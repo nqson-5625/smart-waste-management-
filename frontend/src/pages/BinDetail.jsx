@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api } from '../api'
+import { api, auth } from '../api'
 import { binStatus, WASTE } from './Bins'
 import { fmt, iso } from '../util'
 
@@ -37,14 +37,24 @@ function DeviceModal({ bin, onClose }) {
   const save = useMutation({
     mutationFn: async () => {
       if (mode === 'new' && !created) {
+        // Bước 1: Tạo thiết bị
         await api('POST', '/devices', {
           id: f.id, hardware_model: f.hardware_model, firmware_version: f.firmware_version,
           gateway_ids: f.gateways.split(',').map(s => s.trim()).filter(Boolean),
           sensors: [{ sensor_id: 'us-1', type: 'ultrasonic', model: f.sensor_model }],
           ...(f.serial_number ? { serial_number: f.serial_number } : {}),
         })
+        // Bước 2: Nạp cấu hình hiệu chuẩn ban đầu (theo mục 3.16 đặc tả)
+        await api('POST', `/devices/${f.id}/configs`, {
+          config_rev: 1,
+          empty_distance_mm: 1000,
+          full_distance_mm: 200,
+          sample_interval_s: 60,
+          report_interval_s: 21600,
+        })
         setCreated(true) // nếu bước gắn lỗi, bấm lại sẽ không đăng ký lần hai
       }
+      // Bước 3: Gắn vào thùng
       return api('POST', `/bins/${bin.id}/assignments`, { device_id: f.id, reason: f.reason })
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['bin', bin.id] }); qc.invalidateQueries({ queryKey: ['bins'] }); onClose() },
@@ -84,10 +94,25 @@ export default function BinDetail() {
   const { id } = useParams()
   const [range, setRange] = useState('24h')
   const [showDev, setShowDev] = useState(false)
+  const isAdmin = auth.isAdmin
   const bin = useQuery({ queryKey: ['bin', id], queryFn: () => api('GET', `/bins/${id}`), refetchInterval: 30000 })
   const tele = useQuery({
     queryKey: ['tele', id, range], enabled: !!bin.data?.device, refetchInterval: 30000,
-    queryFn: () => { const to = new Date(), from = new Date(to - RANGES[range] * 3600e3); return api('GET', `/bins/${id}/telemetry?from=${iso(from)}&to=${iso(to)}&limit=100`) },
+    queryFn: async () => {
+      const to = new Date(), from = new Date(to - RANGES[range] * 3600e3)
+      let allItems = []
+      let cursor = null
+      // Lặp lấy qua cursor nếu có nhiều hơn 100 bản tin (tối đa 5 trang / 500 bản tin)
+      for (let i = 0; i < 5; i++) {
+        const q = `from=${iso(from)}&to=${iso(to)}&limit=100${cursor ? `&cursor=${cursor}` : ''}`
+        const res = await api('GET', `/bins/${id}/telemetry?${q}`)
+        const list = res?.items || []
+        allItems = [...allItems, ...list]
+        if (!res?.next_cursor || list.length < 100) break
+        cursor = res.next_cursor
+      }
+      return { items: allItems }
+    },
   })
   if (bin.isLoading) return <p className="empty">Đang tải…</p>
   if (bin.error) return <p className="err">{bin.error.status === 404 ? 'Không tìm thấy thùng này.' : bin.error.message}</p>
@@ -111,7 +136,7 @@ export default function BinDetail() {
       <section className="box">
         <h3>Thiết bị</h3>
         {b.device ? <p>Mã <b>{b.device.id}</b> · {b.device.enabled ? 'đang bật' : 'đã tắt'} · {b.device.lifecycle}</p> : <p className="empty">Thùng chưa có thiết bị.</p>}
-        <button className="btn blue" onClick={() => setShowDev(true)}>{b.device ? 'ĐỔI THIẾT BỊ' : 'GẮN THIẾT BỊ'}</button>
+        {isAdmin && <button className="btn blue" onClick={() => setShowDev(true)}>{b.device ? 'ĐỔI THIẾT BỊ' : 'GẮN THIẾT BỊ'}</button>}
       </section>
       <section className="box wide">
         <h3>Mức đầy theo thời gian
