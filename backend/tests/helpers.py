@@ -47,6 +47,28 @@ def run_all(db):
     return states
 
 
+def insert_gateway(db, gateway_id="gw-test"):
+    now = datetime.now(timezone.utc)
+    db.gateways.insert_one({
+        "_id": gateway_id, "name": gateway_id, "location": None, "enabled": True,
+        "firmware_version": "1.0.0", "status": "unknown", "status_reported_at": None,
+        "last_received_at": None, "boot_id": None, "queue_depth": None, "queue_capacity": 32,
+        "invalid_packets": None, "queue_full_events": None, "storage_errors": None,
+        "wifi_rssi_dbm": None, "created_at": now, "updated_at": now,
+    })
+
+
+def insert_collection(db, event_id, bin_id, waste, completed_at, weight=None):
+    db.collection_events.insert_one({
+        "_id": event_id, "idempotency_key": event_id,
+        "request_hash": hashlib.sha256(event_id.encode()).hexdigest(), "bin_id": bin_id,
+        "worker_id": "usr-collector", "route_id": None, "stop_order": None,
+        "completed_at": completed_at, "recorded_at": completed_at, "waste_type_snapshot": waste,
+        "measured_weight_kg": weight, "weight_source": "scale" if weight is not None else "unknown",
+        "fill_before_pct": None, "fill_after_pct": None, "note": None,
+    })
+
+
 def insert_bin(db, bin_id, environment="field", lng=105.8442, lat=21.005, waste="general"):
     now = datetime.now(timezone.utc)
     db.bins.insert_one({

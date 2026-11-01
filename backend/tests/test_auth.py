@@ -73,3 +73,42 @@ def test_validation_error_format(client, db):
     assert_error(response, 422, "VALIDATION")
     fields = {error["field"] for error in response.json()["details"]["errors"]}
     assert "body.password" in fields
+
+
+def test_unknown_path_error_is_translated(client, db):
+    response = client.get("/api/v1/does-not-exist")
+    assert_error(response, 404, "NOT_FOUND")
+    assert response.json()["message"] == "Không tìm thấy đường dẫn API"
+
+
+# ------------------------------------------------------------ change-password
+
+def change(client, token, current, new):
+    return client.post("/api/v1/auth/change-password", headers=bearer(token),
+                       json={"current_password": current, "new_password": new})
+
+
+def test_change_password(client, db, make_user, login):
+    from conftest import PASSWORD
+
+    email = make_user("usr-a", ["collector"])
+    token = login(email).json()["access_token"]
+    response = change(client, token, PASSWORD, "brand-new-pass-1")
+    assert response.status_code == 200 and response.json() == {"ok": True}
+    assert login(email).status_code == 401
+    assert login(email, "brand-new-pass-1").status_code == 200
+    assert db.audit_logs.count_documents({"action": "password_change", "actor_id": "usr-a"}) == 1
+
+
+def test_change_password_rules(client, db, make_user, login):
+    from conftest import PASSWORD
+
+    token = login(make_user("usr-a", ["admin"])).json()["access_token"]
+    wrong = change(client, token, "not-my-password", "brand-new-pass-1")
+    assert_error(wrong, 422, "VALIDATION")  # 422, never 401: the web would log the user out
+    assert wrong.json()["details"] == {"field": "current_password"}
+    assert_error(change(client, token, PASSWORD, "short"), 422, "VALIDATION")
+    assert_error(change(client, token, PASSWORD, PASSWORD), 422, "VALIDATION")
+    assert_error(client.post("/api/v1/auth/change-password",
+                             json={"current_password": PASSWORD, "new_password": "x" * 10}),
+                 401, "UNAUTHORIZED")

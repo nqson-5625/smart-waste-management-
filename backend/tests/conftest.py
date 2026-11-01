@@ -24,7 +24,8 @@ from helpers import ASSIGNMENT, BIN, DEVICE  # noqa: E402
 
 PASSWORD = "correct-horse-9"
 PIPELINE_COLLECTIONS = ("telemetry", "bin_state", "alerts", "audit_logs", "device_configs",
-                        "bins", "devices", "collection_events")
+                        "bins", "devices", "collection_events", "device_assignments",
+                        "gateways")
 
 
 @pytest.fixture

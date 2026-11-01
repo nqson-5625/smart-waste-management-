@@ -9,6 +9,25 @@ sensor confirms it cleared; sensor_fault follows sample quality.
 ACTOR = "system-worker"
 
 
+def requeue_blocked(database, session, device_id, config_rev, now):
+    """Put a device's blocked telemetry for ``config_rev`` back in the worker queue.
+
+    Called once that calibration revision becomes verified. Returns how many
+    messages were requeued.
+    """
+    result = database.telemetry.update_many(
+        {"device_id": device_id, "config_rev": config_rev, "processing.state": "blocked"},
+        {"$set": {
+            "processing.state": "pending", "processing.attempts": 0,
+            "processing.next_retry_at": now, "processing.lease_owner": None,
+            "processing.lease_until": None, "processing.processed_at": None,
+            "processing.last_error": None,
+        }},
+        session=session,
+    )
+    return result.modified_count
+
+
 def finish(database, message_id, state, now, worker_id, error=None, session=None):
     """Record the outcome on the telemetry document and release the lease."""
     database.telemetry.update_one(
