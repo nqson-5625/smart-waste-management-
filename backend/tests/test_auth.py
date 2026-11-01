@@ -1,5 +1,6 @@
 from fastapi import Depends
 
+from helpers import PASSWORD, assert_error
 from smartwaste_backend.app import app
 from smartwaste_backend.core.security import require_roles
 
@@ -11,14 +12,6 @@ def admin_only(user=Depends(require_roles("admin"))):
 
 def bearer(token):
     return {"Authorization": f"Bearer {token}"}
-
-
-def assert_error(response, status, code):
-    assert response.status_code == status, response.text
-    body = response.json()
-    assert body["code"] == code
-    assert body["request_id"].startswith("req-")
-    assert set(body) == {"code", "message", "request_id", "details"}
 
 
 def test_health(client, db):
@@ -89,8 +82,6 @@ def change(client, token, current, new):
 
 
 def test_change_password(client, db, make_user, login):
-    from conftest import PASSWORD
-
     email = make_user("usr-a", ["collector"])
     token = login(email).json()["access_token"]
     response = change(client, token, PASSWORD, "brand-new-pass-1")
@@ -101,8 +92,6 @@ def test_change_password(client, db, make_user, login):
 
 
 def test_change_password_rules(client, db, make_user, login):
-    from conftest import PASSWORD
-
     token = login(make_user("usr-a", ["admin"])).json()["access_token"]
     wrong = change(client, token, "not-my-password", "brand-new-pass-1")
     assert_error(wrong, 422, "VALIDATION")  # 422, never 401: the web would log the user out

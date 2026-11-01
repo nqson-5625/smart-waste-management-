@@ -2,17 +2,14 @@
 
 import pytest
 
+from helpers import assert_error
+
 
 NEW_BIN = {
     "code": "WB-201", "name": "Cổng Parabol", "address": "Số 1 Đại Cồ Việt", "ward_code": "BK",
     "waste_type": "recyclable", "capacity_l": 240,
     "location": {"type": "Point", "coordinates": [105.8431, 21.0047]},
 }
-
-
-def assert_error(response, status, code):
-    assert response.status_code == status, response.text
-    assert response.json()["code"] == code
 
 
 @pytest.fixture

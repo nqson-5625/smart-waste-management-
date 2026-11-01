@@ -4,12 +4,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from helpers import BIN, insert_bin, insert_gateway, run_all, send
-
-
-def assert_error(response, status, code):
-    assert response.status_code == status, response.text
-    assert response.json()["code"] == code
+from helpers import BIN, assert_error, insert_bin, insert_gateway, run_all, send
 
 
 def device_body(device_id="bin-701", **extra):

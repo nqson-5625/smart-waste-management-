@@ -125,72 +125,20 @@ def create_config(device_id, body, user, request_id):
 
 
 def assign_device(bin_id, body, user, request_id):
-    """Attach a device to a bin, replacing the bin's current device if any."""
+    """Attach a device to a bin, replacing the bin's current device if any.
+
+    Steps, all in one transaction: check -> detach the current device -> attach the
+    new one -> reset the bin's projection -> audit.
+    """
     device_id = body.device_id
 
     def work(database, session):
         now = utcnow()
-        bin_doc = database.bins.find_one({"_id": bin_id}, session=session)
-        if not bin_doc:
-            raise ApiError(404, "Không tìm thấy thùng", {"bin_id": bin_id})
-        if bin_doc["status"] == "retired":
-            raise ApiError(409, "Thùng đã ngừng sử dụng", {"bin_id": bin_id})
-        device = database.devices.find_one({"_id": device_id}, session=session)
-        if not device:
-            raise ApiError(404, "Không tìm thấy thiết bị", {"device_id": device_id})
-        if not device["enabled"] or device["lifecycle"] == "retired":
-            raise ApiError(409, "Thiết bị đã bị tắt hoặc ngừng sử dụng", {"device_id": device_id})
-        busy = database.device_assignments.find_one({"device_id": device_id, "active": True},
-                                                    session=session)
-        if busy:
-            raise ApiError(409, f"Thiết bị đang gắn với thùng {busy['bin_id']}",
-                           {"device_id": device_id, "bin_id": busy["bin_id"]})
-
-        installed_at, replaced = now, None
-        old = database.device_assignments.find_one({"bin_id": bin_id, "active": True},
-                                                   session=session)
-        if old:
-            # Validator requires removed_at > installed_at, even within the same millisecond.
-            removed_at = max(now, naive_utc(old["installed_at"]) + timedelta(milliseconds=1))
-            installed_at, replaced = removed_at, old["device_id"]
-            database.device_assignments.update_one(
-                {"_id": old["_id"], "active": True},
-                {"$set": {"active": False, "removed_at": removed_at, "removed_by": user["_id"]}},
-                session=session,
-            )
-            database.devices.update_one({"_id": replaced},
-                                        {"$set": {"lifecycle": "stock", "updated_at": now}},
-                                        session=session)
-            database.alerts.update_many(
-                {"bin_id": bin_id, "active": True},
-                {"$set": {"status": "resolved", "active": False, "resolved_at": now,
-                          "resolve_reason": "device_replaced", "updated_at": now}},
-                session=session,
-            )
-
-        version = bin_doc["assignment_version"] + 1
-        assignment_id = f"asgn-{bin_id}-v{version}"
-        database.bins.update_one({"_id": bin_id},
-                                 {"$set": {"assignment_version": version, "updated_at": now}},
-                                 session=session)
-        assignment = {
-            "_id": assignment_id, "device_id": device_id, "bin_id": bin_id,
-            "assignment_version": version, "active": True, "installed_at": installed_at,
-            "removed_at": None, "installed_by": user["_id"], "removed_by": None,
-            "reason": body.reason, "created_at": now,
-        }
-        database.device_assignments.insert_one(assignment, session=session)
-        database.devices.update_one({"_id": device_id},
-                                    {"$set": {"lifecycle": "installed", "updated_at": now}},
-                                    session=session)
-        # Fresh projection for the new device: old samples must not leak into it.
-        database.bin_state.replace_one({"_id": bin_id}, {
-            "device_id": device_id, "assignment_id": assignment_id,
-            "assignment_version": version, "latest_boot_id": 0, "latest_seq": 0,
-            "latest_message_id": None, "latest_quality": "unknown", "latest_sampled_at": None,
-            "latest_received_at": None, "last_contact_at": None, "last_good": None,
-            "alarm_active": None, "updated_at": now,
-        }, upsert=True, session=session)
+        bin_doc = _check_assignable(database, session, bin_id, device_id)
+        replaced, installed_at = _detach_current(database, session, bin_id, user, now)
+        assignment = _attach(database, session, bin_doc, device_id, body.reason, user,
+                             installed_at, now)
+        _reset_bin_state(database, session, assignment, now)
         audit_service.record(
             database, actor_id=user["_id"], action="device_assign", entity_type="bin",
             entity_id=bin_id,
@@ -199,9 +147,10 @@ def assign_device(bin_id, body, user, request_id):
             request_id=request_id, session=session,
         )
         return {
-            "id": assignment_id, "bin_id": bin_id, "device_id": device_id,
-            "assignment_version": version, "installed_at": iso(installed_at),
-            "reason": body.reason, "replaced_device_id": replaced,
+            "id": assignment["_id"], "bin_id": bin_id, "device_id": device_id,
+            "assignment_version": assignment["assignment_version"],
+            "installed_at": iso(installed_at), "reason": body.reason,
+            "replaced_device_id": replaced,
         }
 
     try:
@@ -209,3 +158,82 @@ def assign_device(bin_id, body, user, request_id):
     except DuplicateKeyError:
         raise ApiError(409, "Thiết bị hoặc thùng vừa được gắn bởi yêu cầu khác, hãy thử lại",
                        {"bin_id": bin_id, "device_id": device_id})
+
+
+def _check_assignable(database, session, bin_id, device_id):
+    """404/409 unless the bin is in use and the device is enabled and free. Returns the bin."""
+    bin_doc = database.bins.find_one({"_id": bin_id}, session=session)
+    if not bin_doc:
+        raise ApiError(404, "Không tìm thấy thùng", {"bin_id": bin_id})
+    if bin_doc["status"] == "retired":
+        raise ApiError(409, "Thùng đã ngừng sử dụng", {"bin_id": bin_id})
+    device = database.devices.find_one({"_id": device_id}, session=session)
+    if not device:
+        raise ApiError(404, "Không tìm thấy thiết bị", {"device_id": device_id})
+    if not device["enabled"] or device["lifecycle"] == "retired":
+        raise ApiError(409, "Thiết bị đã bị tắt hoặc ngừng sử dụng", {"device_id": device_id})
+    busy = database.device_assignments.find_one({"device_id": device_id, "active": True},
+                                                session=session)
+    if busy:
+        raise ApiError(409, f"Thiết bị đang gắn với thùng {busy['bin_id']}",
+                       {"device_id": device_id, "bin_id": busy["bin_id"]})
+    return bin_doc
+
+
+def _detach_current(database, session, bin_id, user, now):
+    """Close the bin's active assignment, if any.
+
+    Returns (replaced device id or None, install time for the next assignment).
+    """
+    old = database.device_assignments.find_one({"bin_id": bin_id, "active": True},
+                                               session=session)
+    if not old:
+        return None, now
+    # Validator requires removed_at > installed_at, even within the same millisecond.
+    removed_at = max(now, naive_utc(old["installed_at"]) + timedelta(milliseconds=1))
+    database.device_assignments.update_one(
+        {"_id": old["_id"], "active": True},
+        {"$set": {"active": False, "removed_at": removed_at, "removed_by": user["_id"]}},
+        session=session,
+    )
+    database.devices.update_one({"_id": old["device_id"]},
+                                {"$set": {"lifecycle": "stock", "updated_at": now}},
+                                session=session)
+    # Alerts raised from the old device no longer describe the bin.
+    database.alerts.update_many(
+        {"bin_id": bin_id, "active": True},
+        {"$set": {"status": "resolved", "active": False, "resolved_at": now,
+                  "resolve_reason": "device_replaced", "updated_at": now}},
+        session=session,
+    )
+    return old["device_id"], removed_at
+
+
+def _attach(database, session, bin_doc, device_id, reason, user, installed_at, now):
+    """Open a new assignment under the next assignment_version and install the device."""
+    version = bin_doc["assignment_version"] + 1
+    database.bins.update_one({"_id": bin_doc["_id"]},
+                             {"$set": {"assignment_version": version, "updated_at": now}},
+                             session=session)
+    assignment = {
+        "_id": f"asgn-{bin_doc['_id']}-v{version}", "device_id": device_id,
+        "bin_id": bin_doc["_id"], "assignment_version": version, "active": True,
+        "installed_at": installed_at, "removed_at": None, "installed_by": user["_id"],
+        "removed_by": None, "reason": reason, "created_at": now,
+    }
+    database.device_assignments.insert_one(assignment, session=session)
+    database.devices.update_one({"_id": device_id},
+                                {"$set": {"lifecycle": "installed", "updated_at": now}},
+                                session=session)
+    return assignment
+
+
+def _reset_bin_state(database, session, assignment, now):
+    """Start the bin's projection from scratch so old samples never leak into the new device."""
+    database.bin_state.replace_one({"_id": assignment["bin_id"]}, {
+        "device_id": assignment["device_id"], "assignment_id": assignment["_id"],
+        "assignment_version": assignment["assignment_version"], "latest_boot_id": 0,
+        "latest_seq": 0, "latest_message_id": None, "latest_quality": "unknown",
+        "latest_sampled_at": None, "latest_received_at": None, "last_contact_at": None,
+        "last_good": None, "alarm_active": None, "updated_at": now,
+    }, upsert=True, session=session)

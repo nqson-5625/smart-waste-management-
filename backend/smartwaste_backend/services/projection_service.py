@@ -6,6 +6,9 @@ non-null values; the full alert opens once per full episode and resolves when th
 sensor confirms it cleared; sensor_fault follows sample quality.
 """
 
+from . import audit_service
+
+
 ACTOR = "system-worker"
 
 
@@ -43,12 +46,13 @@ def finish(database, message_id, state, now, worker_id, error=None, session=None
     )
 
 
-def audit(database, session, key, action, alert_id, message_id, summary, now):
-    database.audit_logs.insert_one({
-        "_id": key, "event_key": key, "actor_id": ACTOR, "action": action,
-        "entity_type": "alert", "entity_id": alert_id, "source_message_id": message_id,
-        "occurred_at": now, "summary": summary, "request_id": None,
-    }, session=session)
+def audit_alert(database, session, action, alert_id, message_id, summary, now):
+    """Audit an alert transition; the stable key stops a retried message from logging twice."""
+    audit_service.record(
+        database, actor_id=ACTOR, action=action, entity_type="alert", entity_id=alert_id,
+        summary=summary, source_message_id=message_id, event_key=f"{action}:{alert_id}",
+        occurred_at=now, session=session,
+    )
 
 
 def open_alert(database, session, alert_type, scope_type, scope_id, bin_id, message_id, now):
@@ -68,8 +72,8 @@ def open_alert(database, session, alert_type, scope_type, scope_id, bin_id, mess
         "resolved_at": None, "resolve_reason": None, "opened_message_id": message_id,
         "last_message_id": message_id, "updated_at": now,
     }, session=session)
-    audit(database, session, f"alert_open:{alert_id}", "alert_open", alert_id, message_id,
-          f"Mở cảnh báo {alert_type} cho {scope_id}", now)
+    audit_alert(database, session, "alert_open", alert_id, message_id,
+                f"Mở cảnh báo {alert_type} cho {scope_id}", now)
     return True
 
 
@@ -83,8 +87,8 @@ def resolve_alert(database, session, alert_type, scope_type, scope_id, message_i
         session=session,
     )
     if alert:
-        audit(database, session, f"alert_resolve:{alert['_id']}", "alert_resolve", alert["_id"],
-              message_id, f"Đóng cảnh báo {alert_type} cho {scope_id}: {reason}", now)
+        audit_alert(database, session, "alert_resolve", alert["_id"], message_id,
+                    f"Đóng cảnh báo {alert_type} cho {scope_id}: {reason}", now)
 
 
 def apply(database, session, message_id, now, worker_id):

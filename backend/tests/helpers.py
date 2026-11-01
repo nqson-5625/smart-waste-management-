@@ -6,8 +6,18 @@ from datetime import datetime, timedelta, timezone
 from smartwaste_backend.jobs import projection_worker
 
 DEVICE, BIN, ASSIGNMENT = "bin-555", "WB-T1", "asgn-bin-555-1"
+PASSWORD = "correct-horse-9"  # every user created by the make_user fixture
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 RX_BASE_MS = 1_790_000_000_000
+
+
+def assert_error(response, status, code):
+    """The response is an API error with the agreed {code, message, request_id, details} shape."""
+    assert response.status_code == status, response.text
+    body = response.json()
+    assert body["code"] == code
+    assert body["request_id"].startswith("req-")
+    assert set(body) == {"code", "message", "request_id", "details"}
 
 
 def send(db, seq, reason="periodic", quality="ok", fill=50.0, alarm=False, boot=7,

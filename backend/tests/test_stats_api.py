@@ -2,12 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 
-from helpers import BIN, RX_BASE_MS, insert_bin, insert_collection, run_all, send
-
-
-def assert_error(response, status, code):
-    assert response.status_code == status, response.text
-    assert response.json()["code"] == code
+from helpers import BIN, RX_BASE_MS, assert_error, insert_bin, insert_collection, run_all, send
 
 
 START = datetime.fromtimestamp(RX_BASE_MS / 1000, timezone.utc)
