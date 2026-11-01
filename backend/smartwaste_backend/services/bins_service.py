@@ -1,11 +1,14 @@
-"""Bin queries: list with current state, detail, telemetry history."""
+"""Bins: list with current state, detail, telemetry history, create and update."""
+
+from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
 
 from ..core.common import (
     CLOCK_SKEW, STALE_AFTER, decode_cursor, encode_cursor, from_ms, iso, is_fresh, to_ms, utcnow,
 )
 from ..core.db import get_database
 from ..core.errors import ApiError
-from . import alerts_service
+from . import alerts_service, audit_service
 from .telemetry_service import list_telemetry
 
 
@@ -95,14 +98,19 @@ def list_bins(ward_code, waste_type, status, full, fresh, limit, cursor):
     }
 
 
+def _load(bin_id):
+    """One bin joined with its state and last collection, or 404."""
+    docs = list(get_database().bins.aggregate([{"$match": {"_id": bin_id}}, JOIN_STATE,
+                                               LAST_COLLECTION]))
+    if not docs:
+        raise ApiError(404, "Không tìm thấy thùng", {"bin_id": bin_id})
+    return docs[0]
+
+
 def get_bin(bin_id):
     """One bin with notes, attached device and alerts still in force."""
     database = get_database()
-    docs = list(database.bins.aggregate([{"$match": {"_id": bin_id}}, JOIN_STATE,
-                                         LAST_COLLECTION]))
-    if not docs:
-        raise ApiError(404, "Không tìm thấy thùng", {"bin_id": bin_id})
-    doc = docs[0]
+    doc = _load(bin_id)
 
     state = (doc["state"] or [None])[0]
     device = None
@@ -115,6 +123,49 @@ def get_bin(bin_id):
 
     return {**bin_view(doc, utcnow()), "notes": doc["notes"], "device": device,
             "open_alerts": alerts_service.active_for_bin(bin_id)}
+
+
+def create_bin(body, user, request_id):
+    """Register a field bin; its id is its code. 409 if the code is taken."""
+    database = get_database()
+    now = utcnow()
+    doc = {
+        "_id": body.code, "code": body.code, "name": body.name, "address": body.address,
+        "ward_code": body.ward_code,
+        "location": body.location.model_dump() if body.location else None,
+        "waste_type": body.waste_type, "capacity_l": body.capacity_l, "status": "active",
+        "environment": "field", "assignment_version": 0, "notes": body.notes,
+        "created_at": now, "updated_at": now,
+    }
+    try:
+        database.bins.insert_one(doc)
+    except DuplicateKeyError:
+        raise ApiError(409, "Mã thùng đã tồn tại", {"code": body.code})
+    audit_service.record(database, actor_id=user["_id"], action="bin_create", entity_type="bin",
+                         entity_id=body.code, summary=f"Tạo thùng {body.code} ({body.name})",
+                         request_id=request_id)
+    return bin_view(_load(body.code), now)
+
+
+def update_bin(bin_id, body, user, request_id):
+    """Change the fields the client sent; id, code and environment never change."""
+    changes = body.changes()
+    if not changes:
+        raise ApiError(422, "Không có trường nào để cập nhật")
+    database = get_database()
+    now = utcnow()
+    updated = database.bins.find_one_and_update(
+        {"_id": bin_id},
+        {"$set": {**changes, "updated_at": now}},
+        return_document=ReturnDocument.AFTER,
+    )
+    if not updated:
+        raise ApiError(404, "Không tìm thấy thùng", {"bin_id": bin_id})
+    audit_service.record(database, actor_id=user["_id"], action="bin_update", entity_type="bin",
+                         entity_id=bin_id,
+                         summary=f"Sửa thùng {bin_id}: {', '.join(sorted(changes))}",
+                         request_id=request_id)
+    return bin_view(_load(bin_id), now)
 
 
 def bin_telemetry(bin_id, start, end, limit, cursor):

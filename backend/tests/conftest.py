@@ -19,12 +19,12 @@ from smartwaste_backend.app import app  # noqa: E402
 from smartwaste_backend.core.db import get_database  # noqa: E402
 from smartwaste_backend.core.security import hash_password  # noqa: E402
 
-from helpers import ASSIGNMENT, BIN, DEVICE  # noqa: E402
+from helpers import ASSIGNMENT, BIN, DEVICE, PASSWORD  # noqa: E402
 
 
-PASSWORD = "correct-horse-9"
 PIPELINE_COLLECTIONS = ("telemetry", "bin_state", "alerts", "audit_logs", "device_configs",
-                        "bins", "devices", "collection_events")
+                        "bins", "devices", "collection_events", "device_assignments",
+                        "gateways")
 
 
 @pytest.fixture

@@ -1,19 +1,28 @@
 """HTTP endpoints for /bins."""
 
 from datetime import datetime
-from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from ..core.common import Limit, naive_utc
 from ..core.security import current_user, require_roles
+from ..schemas.bins_schemas import BinCreate, BinOut, BinStatus, BinUpdate, WasteType
 from ..services import bins_service
 
 
 router = APIRouter(prefix="/bins", tags=["bins"])
+admin_only = require_roles("admin")
 
-WasteType = Literal["general", "organic", "recyclable", "hazardous", "other"]
-BinStatus = Literal["active", "maintenance", "retired"]
+
+@router.post("", status_code=201, response_model=BinOut)
+def create_bin(body: BinCreate, request: Request, user=Depends(admin_only)):
+    return bins_service.create_bin(body, user, request.state.request_id)
+
+
+@router.patch("/{bin_id}", response_model=BinOut)
+def update_bin(bin_id: str, body: BinUpdate, request: Request, user=Depends(admin_only)):
+    """Partial update. Deleting a bin is done by setting status to retired."""
+    return bins_service.update_bin(bin_id, body, user, request.state.request_id)
 
 
 @router.get("")

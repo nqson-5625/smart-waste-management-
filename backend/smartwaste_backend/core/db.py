@@ -1,21 +1,34 @@
 """MongoDB connection helpers for backend read/query workloads."""
 
-import os
 from functools import lru_cache
 
 from pymongo import MongoClient
+from pymongo.read_concern import ReadConcern
+from pymongo.write_concern import WriteConcern
+
+from .config import get_settings
 
 
 @lru_cache(maxsize=1)
 def get_database():
-    client = MongoClient(
-        os.environ.get(
-            "MONGO_URI",
-            "mongodb://localhost:27017/?directConnection=true",
-        ),
-        serverSelectionTimeoutMS=5000,
-    )
-    return client.get_database(os.environ.get("MONGO_DB", "smartwaste_v2"))
+    settings = get_settings()
+    client = MongoClient(settings.mongo_uri, serverSelectionTimeoutMS=5000)
+    return client.get_database(settings.mongo_db)
+
+
+def run_transaction(callback):
+    """Run ``callback(database, session)`` in one majority-committed transaction.
+
+    The driver retries transient errors (write conflicts) automatically; any other
+    exception aborts the transaction and is re-raised.
+    """
+    database = get_database()
+    with database.client.start_session() as session:
+        return session.with_transaction(
+            lambda s: callback(database, s),
+            read_concern=ReadConcern("snapshot"),
+            write_concern=WriteConcern("majority"),
+        )
 
 
 def get_device(device_id):

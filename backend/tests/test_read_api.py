@@ -2,12 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from helpers import BIN, DEVICE, RX_BASE_MS, insert_bin, run_all, send
-
-
-def assert_error(response, status, code):
-    assert response.status_code == status, response.text
-    assert response.json()["code"] == code
+from helpers import BIN, DEVICE, RX_BASE_MS, assert_error, insert_bin, run_all, send
 
 
 @pytest.fixture
