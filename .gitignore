@@ -11,3 +11,5 @@ dist/
 *.bin
 *.elf
 *.map
+
+node_modules/
