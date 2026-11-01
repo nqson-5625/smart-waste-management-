@@ -127,19 +127,28 @@ Không cần body. Đặt `status = acknowledged`, ghi `acknowledged_by` (từ t
 
 ### 3.6 `POST /bins` (201)
 
-Body: `code`, `name`, `address`, `ward_code`, `waste_type`, `location` (hoặc `lat`,`lng`), `capacity_l?`, `notes?`. `id` của thùng chính là `code` (ví dụ `WB-001`); Backend tự đặt `status=active`, `environment=field`. 409 nếu trùng `code`.
+Body: `code`, `name`, `address`, `ward_code`, `waste_type`, `location` (hoặc `lat`,`lng`), `capacity_l?`, `notes?`. `id` của thùng chính là `code` (ví dụ `WB-001`); Backend tự đặt `status=active`, `environment=field`. 409 nếu trùng `code`. Trả thùng vừa tạo theo cùng dạng một phần tử của `GET /bins` (`state = null` vì chưa gắn thiết bị).
+
+Ràng buộc (sai trả 422): `code` chỉ gồm chữ, số, `-`, `_`, `:` (tối đa 40 ký tự, không dấu cách); `capacity_l` từ 1 đến 100000 (bỏ trống = null, không gửi 0); tọa độ `[kinh độ -180..180, vĩ độ -90..90]`; gửi `lat` thì phải gửi cả `lng`.
 
 ### 3.7 `PATCH /bins/{id}`
 
-Sửa một phần: `name`, `address`, `ward_code`, `waste_type`, `location`, `capacity_l`, `status`, `notes`. Không sửa `id`, `code`, `environment`. Không xóa thùng.
+Sửa một phần: `name`, `address`, `ward_code`, `waste_type`, `location`, `capacity_l`, `status`, `notes`. Chỉ trường có mặt trong body mới bị đổi. Không sửa `id`, `code`, `environment` (gửi lên sẽ bị bỏ qua). Không xóa thùng: "xóa" là `{"status":"retired"}`. `capacity_l`, `notes`, `location` được đặt `null`; các trường khác không được `null`. Body rỗng trả 422. Trả thùng sau khi sửa.
 
 ### 3.8 `POST /devices` (201)
 
-Body: `id` (dạng `bin-001`, 3 đến 6 chữ số), `hardware_model`, `firmware_version`, `gateway_ids[]`, `sensors[]` (`{sensor_id,type:"ultrasonic|lid_switch",model}`), `serial_number?`. 409 nếu trùng `id`. Không trả thông tin MQTT.
+Body: `id` (dạng `bin-001`, 3 đến 6 chữ số), `hardware_model`, `firmware_version`, `gateway_ids[]`, `sensors[]` (`{sensor_id,type:"ultrasonic|lid_switch",model}`), `serial_number?`, `notes?`. 409 nếu trùng `id` hoặc `serial_number`. Không trả thông tin MQTT.
+
+- Mỗi gateway trong `gateway_ids` (dạng `gw-001`) phải đã được đăng ký, nếu không trả 422 với `details.unknown = [...]`. Với dữ liệu mô phỏng dùng `gw-simulator`.
+- Cần ít nhất một cảm biến `ultrasonic`; `model` không được rỗng.
+- Thiết bị mới ở trạng thái `lifecycle = "stock"` cho tới khi được gắn vào thùng.
 
 ### 3.9 `POST /bins/{id}/assignments` (201)
 
-Body: `device_id`, `reason`. Gắn hoặc thay thiết bị cho thùng trong một transaction: đóng gắn cũ, tăng `assignment_version`, reset hiện trạng thùng. 409 nếu thiết bị đang gắn thùng khác.
+Body: `device_id`, `reason`. Gắn hoặc thay thiết bị cho thùng trong một transaction: đóng gắn cũ, tăng `assignment_version`, reset hiện trạng thùng (số đo cũ không còn hiện), đóng các cảnh báo đang mở của thùng với lý do `device_replaced`, chuyển thiết bị cũ về `stock`. Trả `{"id","bin_id","device_id","assignment_version","installed_at","reason","replaced_device_id"}`.
+
+- 409 nếu thiết bị đang gắn thùng khác (`details.bin_id` cho biết thùng nào), thiết bị đã tắt, hoặc thùng đã `retired`. 404 nếu thùng hoặc thiết bị không tồn tại.
+- Chỉ số đo lấy **sau** thời điểm gắn mới được tính cho thùng. Lưu ý khi demo: simulator của Quang Sơn phát mẫu đo lùi 7 phút về quá khứ, nên với thiết bị vừa gắn phải đợi quá 7 phút rồi chạy simulator thì thùng mới có số đo.
 
 ### 3.10 `POST /collection-events` (201)
 
@@ -157,9 +166,12 @@ Lịch sử thu gom, mới nhất trước. Query: `bin_id`, `worker_id`, `route
 
 ### 3.11 `GET /stats/waste-by-type`
 
-Query: `from`, `to` (bắt buộc). Trả `{"items":[...]}` (không phân trang), mỗi phần tử là một loại rác:
+Query: `from`, `to` (bắt buộc). Trả `{"items":[...]}` (không phân trang), luôn đủ 5 phần tử theo thứ tự `general, organic, recyclable, hazardous, other`:
 `{"waste_type","bin_count","collection_count","avg_fill_pct","known_weight_kg","known_weight_count","unknown_weight_count"}`.
-Không có cân thì chỉ có số lượt thu gom; `known_weight_kg` chỉ cộng các lượt có cân. Không suy kg từ `fill_pct`.
+
+- `bin_count`: số thùng đang dùng (field, chưa `retired`) thuộc loại đó.
+- `avg_fill_pct`: mức đầy trung bình của các mẫu đo **tốt** trong khoảng thời gian; `null` nếu không có mẫu.
+- `collection_count`, `known_weight_*`, `unknown_weight_count`: từ các lượt thu gom đã xác nhận trong khoảng. Không có cân thì chỉ có số lượt; `known_weight_kg` chỉ cộng các lượt có cân, `null` nếu không lượt nào có cân. Không suy kg từ `fill_pct`.
 
 ### 3.12 `POST /routes/suggest`
 
@@ -223,6 +235,11 @@ Query `from`, `to` (ngày `YYYY-MM-DD`, giờ Việt Nam). Trả `{"items":[...]
 ### 3.16 `POST /devices/{id}/configs` (201)
 
 Khai báo thông số hiệu chuẩn đang nạp trong firmware của thiết bị. Body `{"config_rev":1,"empty_distance_mm":1000,"full_distance_mm":200,"sample_interval_s":60,"report_interval_s":21600,"note?"}`; điều kiện `full_distance_mm < empty_distance_mm`. `config_rev` phải trùng giá trị đang nạp trên node. Tạo xong ở trạng thái đã xác minh và thành cấu hình đang dùng của thiết bị. 409 nếu revision đã tồn tại (revision cũ không sửa được, muốn đổi thì tạo revision mới).
+
+- `sample_interval_s` mặc định 60, `report_interval_s` mặc định 21600 (6 giờ), `report_interval_s >= sample_interval_s`. Ngưỡng 80% / 70% / 2 chu kỳ cố định theo firmware v1, client không gửi.
+- `sensor_id` Backend tự lấy từ cảm biến siêu âm của thiết bị.
+- Trả cấu hình vừa tạo kèm `requeued_messages`: số bản tin trước đó bị chặn vì thiếu hiệu chuẩn, nay được đưa lại hàng đợi xử lý.
+- Mốc rỗng, mốc đầy và `config_rev` phải là giá trị thật đo trên thùng và nạp trên node; web nên cho admin nhập thay vì viết cứng.
 
 **Thiết bị chưa có cấu hình thì dữ liệu đo vẫn được lưu nhưng không hiện lên thùng.** Vì vậy hộp thoại gắn thiết bị trên web nên đi theo thứ tự: `POST /devices` → `POST /devices/{id}/configs` → `POST /bins/{id}/assignments`.
 
