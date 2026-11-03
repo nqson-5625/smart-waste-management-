@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet'
 import { api, auth } from '../api'
-import { binStatus, WASTE } from './Bins'
+import { binStatus, WASTE, STATUS_COLORS } from './Bins'
 import { fmt, iso } from '../util'
 
 const RANGES = { '24h': 24, '7d': 168 }
@@ -118,6 +119,8 @@ export default function BinDetail() {
   if (bin.error) return <p className="err">{bin.error.status === 404 ? 'Không tìm thấy thùng này.' : bin.error.message}</p>
   const b = bin.data, s = binStatus(b), st = b.state, items = tele.data?.items || []
   const bad = items.filter(i => i.quality !== 'ok').length
+  const color = STATUS_COLORS[s.key] || STATUS_COLORS.none
+
   return (
     <div className="detail">
       <section className="box">
@@ -133,11 +136,46 @@ export default function BinDetail() {
           <dt>Cảnh báo mở</dt><dd>{b.open_alerts?.length ? b.open_alerts.length + ' (xác nhận ở chuông trên đầu trang)' : 'Không có'}</dd>
         </dl>
       </section>
-      <section className="box">
-        <h3>Thiết bị</h3>
-        {b.device ? <p>Mã <b>{b.device.id}</b> · {b.device.enabled ? 'đang bật' : 'đã tắt'} · {b.device.lifecycle}</p> : <p className="empty">Thùng chưa có thiết bị.</p>}
-        {isAdmin && <button className="btn blue" onClick={() => setShowDev(true)}>{b.device ? 'ĐỔI THIẾT BỊ' : 'GẮN THIẾT BỊ'}</button>}
-      </section>
+
+      <div style={{ display: 'grid', gap: '16px' }}>
+        <section className="box">
+          <h3>Thiết bị</h3>
+          {b.device ? <p>Mã <b>{b.device.id}</b> · {b.device.enabled ? 'đang bật' : 'đã tắt'} · {b.device.lifecycle}</p> : <p className="empty">Thùng chưa có thiết bị.</p>}
+          {isAdmin && <button className="btn blue" onClick={() => setShowDev(true)}>{b.device ? 'ĐỔI THIẾT BỊ' : 'GẮN THIẾT BỊ'}</button>}
+        </section>
+
+        <section className="box">
+          <h3>Vị trí trên bản đồ</h3>
+          <MapContainer
+            center={[b.lat, b.lng]}
+            zoom={16}
+            style={{ height: '180px', width: '100%', borderRadius: '4px' }}
+            scrollWheelZoom={false}
+          >
+            <TileLayer url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="© OpenStreetMap" />
+            <CircleMarker
+              center={[b.lat, b.lng]}
+              radius={10}
+              pathOptions={{
+                color: color.border,
+                fillColor: color.fill,
+                fillOpacity: 0.9,
+                weight: 2
+              }}
+            >
+              <Popup>
+                <b>{b.name} ({b.code})</b><br />
+                <span style={{ fontSize: '12px', color: '#6b7280' }}>{b.address}</span><br />
+                <div style={{ marginTop: '4px' }}>
+                  <span className={`badge ${s.key}`}>{s.label}</span> {st?.fill_pct != null && s.key !== 'none' && ` ${Math.round(st.fill_pct)}%`}
+                </div>
+              </Popup>
+            </CircleMarker>
+          </MapContainer>
+          <p className="hint" style={{ marginTop: '8px', fontSize: '12px' }}>Tọa độ: {b.lat?.toFixed(5)}, {b.lng?.toFixed(5)}</p>
+        </section>
+      </div>
+
       <section className="box wide">
         <h3>Mức đầy theo thời gian
           <span className="tabs">{Object.keys(RANGES).map(r => <button key={r} className={r === range ? 'on' : ''} onClick={() => setRange(r)}>{r === '24h' ? '24 giờ' : '7 ngày'}</button>)}</span>
