@@ -1,1 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#1976d2"/><path d="M20 22h24l-2 26H22z" fill="#fff"/><rect x="18" y="16" width="28" height="4" rx="2" fill="#fff"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#2e7d32"/>
+  <!-- Thùng rác -->
+  <path d="M22 24h20l-2 24H24z" fill="#ffffff"/>
+  <rect x="20" y="19" width="24" height="3" rx="1.5" fill="#ffffff"/>
+  <rect x="28" y="16" width="8" height="2" rx="1" fill="#ffffff"/>
+  <!-- Sóng Wi-Fi -->
+  <path d="M26 12a9 9 0 0 1 12 0" stroke="#a7f3d0" stroke-width="2" stroke-linecap="round" fill="none"/>
+  <path d="M29 14.5a5 5 0 0 1 6 0" stroke="#a7f3d0" stroke-width="2" stroke-linecap="round" fill="none"/>
+</svg>

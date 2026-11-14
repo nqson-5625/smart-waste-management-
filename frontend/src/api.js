@@ -45,7 +45,17 @@ const alertsOf = () => bins.filter(x => x.state?.alarm_active).map(x => ({
 async function mock(m, p, b) {
   await new Promise(r => setTimeout(r, 150))
   const [path, qs] = p.split('?'); const q = new URLSearchParams(qs); const seg = path.split('/')
-  if (path === '/auth/login') return { access_token: 'mock', token_type: 'bearer', expires_in: 28800, user: { id: 'u1', display_name: 'Quản trị viên', roles: ['admin'] } }
+  if (path === '/auth/login') {
+    const isCollector = b?.email?.toLowerCase().includes('collector') || b?.email?.toLowerCase().includes('thugom')
+    return {
+      access_token: 'mock',
+      token_type: 'bearer',
+      expires_in: 28800,
+      user: isCollector
+        ? { id: 'u2', display_name: 'Nguyễn Văn Gom', roles: ['collector'] }
+        : { id: 'u1', display_name: 'Quản trị viên', roles: ['admin'] },
+    }
+  }
   if (path === '/auth/me') return auth.user || { id: 'u1', display_name: 'Quản trị viên', roles: ['admin'] }
   if (path === '/auth/change-password') {
     if (!b?.current_password) throw err(422, 'VALIDATION', 'Vui lòng nhập mật khẩu hiện tại')
