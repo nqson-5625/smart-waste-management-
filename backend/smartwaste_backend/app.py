@@ -6,7 +6,6 @@ workers, scripts/ manual seeds.
 """
 
 import logging
-import os
 import uuid
 
 from fastapi import APIRouter, FastAPI, Request
@@ -17,17 +16,21 @@ from fastapi.responses import JSONResponse
 from pymongo.errors import PyMongoError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from .api import alerts_router, auth_router, bins_router
+from .api import alerts_router, auth_router, bins_router, devices_router, stats_router
+from .core.config import get_settings
 from .core.db import get_database
-from .core.errors import CODES
+from .core.errors import ApiError, CODES
 
 
 log = logging.getLogger("smartwaste.api")
 
-app = FastAPI(title="Smart Waste API", version="0.1.0")
+# Framework-generated errors (unknown path, wrong method) shown in Vietnamese.
+FRAMEWORK_MESSAGES = {404: "Không tìm thấy đường dẫn API", 405: "Phương thức không được hỗ trợ"}
+
+app = FastAPI(title="Smart Waste API", version="0.2.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.environ.get("CORS_ORIGINS", "http://localhost:5173").split(","),
+    allow_origins=get_settings().cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["X-Request-ID"],
@@ -59,9 +62,10 @@ def error_response(request, status_code, code, message, details=None):
 @app.exception_handler(StarletteHTTPException)
 async def http_error(request: Request, exc: StarletteHTTPException):
     code = getattr(exc, "code", None) or CODES.get(exc.status_code, "ERROR")
-    return error_response(
-        request, exc.status_code, code, str(exc.detail), getattr(exc, "details", None)
-    )
+    message = str(exc.detail)
+    if not isinstance(exc, ApiError):
+        message = FRAMEWORK_MESSAGES.get(exc.status_code, message)
+    return error_response(request, exc.status_code, code, message, getattr(exc, "details", None))
 
 
 @app.exception_handler(RequestValidationError)
@@ -93,5 +97,7 @@ def health():
 
 api.include_router(auth_router.router)
 api.include_router(bins_router.router)
+api.include_router(devices_router.router)
 api.include_router(alerts_router.router)
+api.include_router(stats_router.router)
 app.include_router(api)

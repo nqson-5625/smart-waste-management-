@@ -5,6 +5,7 @@ from pymongo import ReturnDocument
 from ..core.common import decode_cursor, encode_cursor, from_ms, iso, to_ms, utcnow
 from ..core.db import get_database
 from ..core.errors import ApiError
+from . import audit_service
 
 
 STATUSES = {"open", "acknowledged", "resolved"}
@@ -65,13 +66,12 @@ def acknowledge(alert_id, user, request_id):
         return_document=ReturnDocument.AFTER,
     )
     if alert:
-        database.audit_logs.insert_one({
-            "_id": f"alert_ack:{alert_id}", "event_key": f"alert_ack:{alert_id}",
-            "actor_id": user["_id"], "action": "alert_ack", "entity_type": "alert",
-            "entity_id": alert_id, "source_message_id": None, "occurred_at": now,
-            "summary": f"{user['display_name']} xác nhận đã nhận cảnh báo {alert['type']}",
-            "request_id": request_id,
-        })
+        audit_service.record(
+            database, actor_id=user["_id"], action="alert_ack", entity_type="alert",
+            entity_id=alert_id,
+            summary=f"{user['display_name']} xác nhận đã nhận cảnh báo {alert['type']}",
+            request_id=request_id, event_key=f"alert_ack:{alert_id}", occurred_at=now,
+        )
         return alert_view(alert)
 
     existing = database.alerts.find_one({"_id": alert_id})

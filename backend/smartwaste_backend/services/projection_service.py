@@ -6,7 +6,29 @@ non-null values; the full alert opens once per full episode and resolves when th
 sensor confirms it cleared; sensor_fault follows sample quality.
 """
 
+from . import audit_service
+
+
 ACTOR = "system-worker"
+
+
+def requeue_blocked(database, session, device_id, config_rev, now):
+    """Put a device's blocked telemetry for ``config_rev`` back in the worker queue.
+
+    Called once that calibration revision becomes verified. Returns how many
+    messages were requeued.
+    """
+    result = database.telemetry.update_many(
+        {"device_id": device_id, "config_rev": config_rev, "processing.state": "blocked"},
+        {"$set": {
+            "processing.state": "pending", "processing.attempts": 0,
+            "processing.next_retry_at": now, "processing.lease_owner": None,
+            "processing.lease_until": None, "processing.processed_at": None,
+            "processing.last_error": None,
+        }},
+        session=session,
+    )
+    return result.modified_count
 
 
 def finish(database, message_id, state, now, worker_id, error=None, session=None):
@@ -24,12 +46,13 @@ def finish(database, message_id, state, now, worker_id, error=None, session=None
     )
 
 
-def audit(database, session, key, action, alert_id, message_id, summary, now):
-    database.audit_logs.insert_one({
-        "_id": key, "event_key": key, "actor_id": ACTOR, "action": action,
-        "entity_type": "alert", "entity_id": alert_id, "source_message_id": message_id,
-        "occurred_at": now, "summary": summary, "request_id": None,
-    }, session=session)
+def audit_alert(database, session, action, alert_id, message_id, summary, now):
+    """Audit an alert transition; the stable key stops a retried message from logging twice."""
+    audit_service.record(
+        database, actor_id=ACTOR, action=action, entity_type="alert", entity_id=alert_id,
+        summary=summary, source_message_id=message_id, event_key=f"{action}:{alert_id}",
+        occurred_at=now, session=session,
+    )
 
 
 def open_alert(database, session, alert_type, scope_type, scope_id, bin_id, message_id, now):
@@ -49,8 +72,8 @@ def open_alert(database, session, alert_type, scope_type, scope_id, bin_id, mess
         "resolved_at": None, "resolve_reason": None, "opened_message_id": message_id,
         "last_message_id": message_id, "updated_at": now,
     }, session=session)
-    audit(database, session, f"alert_open:{alert_id}", "alert_open", alert_id, message_id,
-          f"Mở cảnh báo {alert_type} cho {scope_id}", now)
+    audit_alert(database, session, "alert_open", alert_id, message_id,
+                f"Mở cảnh báo {alert_type} cho {scope_id}", now)
     return True
 
 
@@ -64,8 +87,8 @@ def resolve_alert(database, session, alert_type, scope_type, scope_id, message_i
         session=session,
     )
     if alert:
-        audit(database, session, f"alert_resolve:{alert['_id']}", "alert_resolve", alert["_id"],
-              message_id, f"Đóng cảnh báo {alert_type} cho {scope_id}: {reason}", now)
+        audit_alert(database, session, "alert_resolve", alert["_id"], message_id,
+                    f"Đóng cảnh báo {alert_type} cho {scope_id}: {reason}", now)
 
 
 def apply(database, session, message_id, now, worker_id):

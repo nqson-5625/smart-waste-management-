@@ -6,8 +6,18 @@ from datetime import datetime, timedelta, timezone
 from smartwaste_backend.jobs import projection_worker
 
 DEVICE, BIN, ASSIGNMENT = "bin-555", "WB-T1", "asgn-bin-555-1"
+PASSWORD = "correct-horse-9"  # every user created by the make_user fixture
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 RX_BASE_MS = 1_790_000_000_000
+
+
+def assert_error(response, status, code):
+    """The response is an API error with the agreed {code, message, request_id, details} shape."""
+    assert response.status_code == status, response.text
+    body = response.json()
+    assert body["code"] == code
+    assert body["request_id"].startswith("req-")
+    assert set(body) == {"code", "message", "request_id", "details"}
 
 
 def send(db, seq, reason="periodic", quality="ok", fill=50.0, alarm=False, boot=7,
@@ -45,6 +55,28 @@ def run_all(db):
     while (state := projection_worker.process_one(db)) is not None:
         states.append(state)
     return states
+
+
+def insert_gateway(db, gateway_id="gw-test"):
+    now = datetime.now(timezone.utc)
+    db.gateways.insert_one({
+        "_id": gateway_id, "name": gateway_id, "location": None, "enabled": True,
+        "firmware_version": "1.0.0", "status": "unknown", "status_reported_at": None,
+        "last_received_at": None, "boot_id": None, "queue_depth": None, "queue_capacity": 32,
+        "invalid_packets": None, "queue_full_events": None, "storage_errors": None,
+        "wifi_rssi_dbm": None, "created_at": now, "updated_at": now,
+    })
+
+
+def insert_collection(db, event_id, bin_id, waste, completed_at, weight=None):
+    db.collection_events.insert_one({
+        "_id": event_id, "idempotency_key": event_id,
+        "request_hash": hashlib.sha256(event_id.encode()).hexdigest(), "bin_id": bin_id,
+        "worker_id": "usr-collector", "route_id": None, "stop_order": None,
+        "completed_at": completed_at, "recorded_at": completed_at, "waste_type_snapshot": waste,
+        "measured_weight_kg": weight, "weight_source": "scale" if weight is not None else "unknown",
+        "fill_before_pct": None, "fill_after_pct": None, "note": None,
+    })
 
 
 def insert_bin(db, bin_id, environment="field", lng=105.8442, lat=21.005, waste="general"):

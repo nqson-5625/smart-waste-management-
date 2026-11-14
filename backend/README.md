@@ -57,6 +57,7 @@ cd backend
 smartwaste_backend/
 ├── app.py        điểm vào: tạo FastAPI, định dạng lỗi, X-Request-ID, CORS, GET /health
 ├── core/         hạ tầng dùng chung, không chứa nghiệp vụ
+├── schemas/      <tính năng>_schemas.py: kiểu dữ liệu vào/ra (Pydantic), hiện trên /docs
 ├── api/          <tính năng>_router.py: router HTTP mỏng, mỗi file một nhóm endpoint
 ├── services/     <tính năng>_service.py: quy tắc nghiệp vụ và truy vấn MongoDB; không có code HTTP
 ├── jobs/         <tên>_worker.py: tiến trình chạy nền
@@ -69,15 +70,19 @@ smartwaste_backend/
 
 | File | Nội dung |
 |---|---|
-| `core/db.py` | Kết nối MongoDB (`MONGO_URI`, `MONGO_DB`) và helper đọc nhanh |
+| `core/config.py` | Đọc biến môi trường một lần (`MONGO_URI`, `MONGO_DB`, `JWT_SECRET`, `CORS_ORIGINS`) |
+| `core/db.py` | Kết nối MongoDB, `run_transaction` (transaction majority, tự thử lại khi xung đột ghi), helper đọc nhanh |
 | `core/errors.py` | `ApiError`, mã lỗi chuẩn |
 | `core/security.py` | Băm mật khẩu bcrypt, JWT HS256 sống 8 giờ, `current_user`, `require_roles` |
 | `core/common.py` | Thời gian ISO, cursor phân trang, tính `fresh` |
-| `api/auth_router.py` + `services/auth_service.py` | `POST /auth/login`, `GET /auth/me` |
-| `api/bins_router.py` + `services/bins_service.py` | `GET /bins`, `/bins/{id}`, `/bins/{id}/telemetry` |
+| `api/auth_router.py` + `services/auth_service.py` | `POST /auth/login`, `GET /auth/me`, `POST /auth/change-password` |
+| `api/bins_router.py` + `services/bins_service.py` | `GET /bins`, `/bins/{id}`, `/bins/{id}/telemetry`, `POST /bins`, `PATCH /bins/{id}` |
+| `api/devices_router.py` + `services/devices_service.py` | `POST /devices`, `POST /devices/{id}/configs`, `POST /bins/{id}/assignments` |
 | `api/alerts_router.py` + `services/alerts_service.py` | `GET /alerts`, `POST /alerts/{id}/ack` |
+| `api/stats_router.py` + `services/stats_service.py` | `GET /stats/waste-by-type` |
+| `services/audit_service.py` | Ghi `audit_logs` cho thao tác của người dùng (ai, làm gì, request nào) |
 | `services/telemetry_service.py` | Truy vấn lịch sử đo theo `(bin_id, sampled_at, _id)` |
-| `services/projection_service.py` | Quy tắc tính `bin_state` và mở/đóng cảnh báo từ một bản telemetry |
+| `services/projection_service.py` | Quy tắc tính `bin_state` và mở/đóng cảnh báo từ một bản telemetry; `requeue_blocked` đưa bản tin bị chặn về hàng đợi khi có hiệu chuẩn |
 | `jobs/projection_worker.py` | Vòng lặp: nhận bản `pending` có lease, gọi `projection_service.apply` trong transaction, thử lại khi lỗi |
 | `scripts/seed_users.py` | Tạo tài khoản demo |
 | `scripts/seed_demo.py` | Thùng `field` mô phỏng kèm thiết bị, gắn thiết bị và hiệu chuẩn `verified` |

@@ -1,12 +1,12 @@
 """Password hashing, JWT access tokens and role-check dependencies."""
 
-import os
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
 import jwt
 from fastapi import Depends, Request
 
+from .config import get_settings
 from .db import get_database
 from .errors import ApiError
 
@@ -17,7 +17,7 @@ BCRYPT_MAX_BYTES = 72
 
 
 def _secret():
-    secret = os.environ.get("JWT_SECRET")
+    secret = get_settings().jwt_secret
     if not secret:
         raise RuntimeError("JWT_SECRET is not set")
     return secret
