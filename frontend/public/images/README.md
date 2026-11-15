@@ -1,11 +1,24 @@
-# Thư mục chứa hình ảnh Mobile PWA
+# Quản lý hình ảnh trên Mobile PWA
 
-Bạn có thể thêm các file ảnh chụp thực tế hoặc tài nguyên đồ họa của bạn vào thư mục này:
+Ứng dụng đã được cấu hình tương thích linh hoạt giữa **Ảnh Backend** và **Ảnh Nội bộ (Frontend)**:
 
-1. **`smart-bin-hero.jpg`**: Ảnh chụp thực tế thùng rác ngoài trời (Hiển thị ở phần header màn hình Đăng nhập Mobile).
-2. **`truck-route.png`**: Ảnh minh họa tuyến đường xe thu gom rác (Hiển thị ở Card 1 - Trang chủ).
-3. **`smart-bin-preview.png`**: Ảnh minh họa thùng rác thông minh (Hiển thị ở Card 2 - Trang chủ).
-4. **`bin-spot-thumb.jpg`**: Ảnh thumbnail điểm đặt thùng rác (Hiển thị ở Bottom Sheet của Bản đồ).
-5. **`bin-spot-large.jpg`**: Ảnh lớn chụp thực tế điểm đặt thùng (Hiển thị ở Màn hình Chi tiết thùng & Biểu đồ).
+### 1. Khi Backend có Endpoint trả ảnh (Trong tương lai):
+Component `ImagePlaceholder` đã tích hợp sẵn hàm `getBackendImageUrl()`. Backend chỉ cần trả về một trong các trường sau trong đối tượng Thùng rác (`Bin`) hoặc Xe gom rác (`Truck`):
+- `image_url` (ví dụ: `https://api.domain.com/uploads/bins/wb-001.jpg`)
+- `photo_url`
+- `thumbnail_url`
+- `image`
 
-*Lưu ý: Nếu chưa thêm ảnh, hệ thống đã tích hợp sẵn khung giữ chỗ (Placeholder) đồng bộ màu sắc và icon phù hợp.*
+Ứng dụng sẽ **tự động ưu tiên hiển thị ảnh từ Backend**. Nếu ảnh từ backend bị lỗi (404/mất mạng), hệ thống sẽ tự động chuyển sang ảnh dự phòng local bên dưới mà không làm crash ứng dụng.
+
+---
+
+### 2. Khi Backend chưa có ảnh (Hiện tại):
+Hệ thống sử dụng các file ảnh tĩnh đặt trong thư mục này (`frontend/public/images/`):
+- **`smart-bin-hero.jpg`**: Ảnh thùng rác tại màn hình Đăng nhập.
+- **`truck-route.png`**: Ảnh xe gom rác ở Card 1 (Trang chủ) và Bottom Sheet xe rác.
+- **`smart-bin-preview.png`**: Ảnh thùng rác ở Card 2 (Trang chủ).
+- **`bin-spot-thumb.jpg`**: Ảnh thumbnail điểm đặt thùng ở Bottom Sheet bản đồ.
+- **`bin-spot-large.jpg`**: Ảnh lớn góc rộng ở màn hình Chi tiết thùng.
+
+*Nếu chưa có các file ảnh trên, hệ thống sẽ tự động hiển thị khung Placeholder vector giữ chỗ đẹp mắt và đồng bộ.*

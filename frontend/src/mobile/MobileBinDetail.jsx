@@ -167,16 +167,17 @@ export default function MobileBinDetail() {
           <ArrowLeft size={20} />
         </button>
         <div>
-          <h2 className="m-detail-main-title">Adress</h2>
+          <h2 className="m-detail-main-title">Address</h2>
         </div>
       </div>
 
       <p className="m-detail-address">{address}</p>
 
-      {/* Ảnh lớn điểm đặt thùng */}
+      {/* Ảnh lớn điểm đặt thùng (Sẵn sàng tương thích endpoint backend trả về image_url / photo_url) */}
       <div className="m-detail-hero-img">
         <ImagePlaceholder
-          src="/images/bin-spot-large.jpg"
+          src={bin?.image_url || bin?.photo_url || '/images/bin-spot-large.jpg'}
+          fallbackSrc="/images/bin-spot-large.jpg"
           label="Ảnh thực tế điểm đặt thùng (Street View)"
           iconType="map"
         />

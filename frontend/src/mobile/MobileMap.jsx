@@ -316,7 +316,8 @@ export default function MobileMap() {
           <div className="m-sheet-body">
             <div className="m-sheet-thumbnail">
               <ImagePlaceholder
-                src="/images/truck-route.png"
+                src={selectedEntity.image_url || selectedEntity.photo_url || '/images/truck-route.png'}
+                fallbackSrc="/images/truck-route.png"
                 label="Xe gom rác"
                 iconType="truck"
               />
@@ -368,7 +369,8 @@ export default function MobileMap() {
           <div className="m-sheet-body">
             <div className="m-sheet-thumbnail">
               <ImagePlaceholder
-                src="/images/bin-spot-thumb.jpg"
+                src={selectedEntity.data.image_url || selectedEntity.data.photo_url || '/images/bin-spot-thumb.jpg'}
+                fallbackSrc="/images/bin-spot-thumb.jpg"
                 label="Ảnh điểm đặt thùng"
                 iconType="map"
               />
