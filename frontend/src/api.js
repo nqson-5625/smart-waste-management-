@@ -52,7 +52,7 @@ async function mock(m, p, b) {
       token_type: 'bearer',
       expires_in: 28800,
       user: isCollector
-        ? { id: 'u2', display_name: 'Nguyễn Văn Gom', roles: ['collector'] }
+        ? { id: 'u2', display_name: 'Nguyễn Văn Gom', phone: '09223828', roles: ['collector'] }
         : { id: 'u1', display_name: 'Quản trị viên', roles: ['admin'] },
     }
   }

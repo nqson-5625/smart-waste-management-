@@ -1,13 +1,14 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, User, LogOut, Truck, Trash2 } from 'lucide-react'
+import { Search, User, LogOut, Truck, Trash2, AlertTriangle } from 'lucide-react'
 import { auth } from '../api'
 import ImagePlaceholder from './ImagePlaceholder'
 
 export default function MobileHome() {
   const nav = useNavigate()
   const [searchTerm, setSearchTerm] = useState('')
-  const user = auth.user || { display_name: 'UserName', phone: '09223828' }
+  const user = auth.user || { display_name: 'Nguyễn Văn Gom', phone: '09223828', roles: ['collector'] }
+  const isAdmin = auth.isAdmin
 
   const handleLogout = () => {
     auth.clear()
@@ -16,6 +17,22 @@ export default function MobileHome() {
 
   return (
     <div className="m-home-container">
+      {/* Cảnh báo nếu đang dùng tài khoản Admin trên Mobile */}
+      {isAdmin && (
+        <div style={{ background: '#fef2f2', borderBottom: '1px solid #fecaca', padding: '10px 16px', fontSize: '12px', color: '#991b1b', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <AlertTriangle size={16} />
+            <span>Tài khoản Admin không phù hợp cho Mobile.</span>
+          </div>
+          <button
+            onClick={handleLogout}
+            style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 4, padding: '4px 8px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
+          >
+            Đổi sang Người thu gom
+          </button>
+        </div>
+      )}
+
       {/* Header cong màu xanh lá theo nguyên mẫu */}
       <div className="m-home-curved-header">
         <h1 className="m-home-app-title">Smart Garbaging</h1>
@@ -26,7 +43,7 @@ export default function MobileHome() {
             <User size={30} strokeWidth={2.2} />
           </div>
           <div className="m-home-user-info">
-            <div className="m-home-username">{user.display_name || 'UserName'}</div>
+            <div className="m-home-username">{user.display_name || 'Nguyễn Văn Gom'}</div>
             <div className="m-home-userphone">{user.phone || '09223828'}</div>
           </div>
           <button

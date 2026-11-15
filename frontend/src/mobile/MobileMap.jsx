@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { MapContainer, TileLayer, Circle, Marker, Popup, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Circle, Marker, Popup, Polyline, useMap } from 'react-leaflet'
 import L from 'leaflet'
-import { ArrowLeft, Search, ArrowRight, Truck } from 'lucide-react'
-import { api } from '../api'
+import { ArrowLeft, ArrowRight, Truck, Trash2, Navigation } from 'lucide-react'
+import { api, auth } from '../api'
 import ImagePlaceholder from './ImagePlaceholder'
 
 // Fix icon default Leaflet khi đóng gói Vite
@@ -15,8 +15,14 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 })
 
-// Tọa độ trung tâm mặc định (Hoàng Mai, Hà Nội theo thiết kế)
+// Tọa độ trung tâm mặc định (Hoàng Mai, Hà Nội)
 const DEFAULT_CENTER = [20.985, 105.845]
+
+// Hàm kiểm tra và chuẩn hóa tọa độ tránh NaN crash Leaflet
+const parseCoord = (val, fallback) => {
+  const num = parseFloat(val)
+  return !isNaN(num) && num > 0 ? num : fallback
+}
 
 // Custom Icon cho Ghim thùng rác hiển thị số %
 const createBinIcon = (fillPct, isSelected) => {
@@ -50,47 +56,60 @@ const createBinIcon = (fillPct, isSelected) => {
 }
 
 // Custom Icon cho Xe gom rác
-const truckIcon = L.divIcon({
+const createTruckIcon = (isSelected) => L.divIcon({
   className: 'custom-truck-pin',
   html: `
     <div style="
       background: #2e7d32;
       color: #fff;
-      width: 36px;
-      height: 36px;
+      width: 42px;
+      height: 42px;
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
-      border: 3px solid #ffffff;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+      border: ${isSelected ? '3px solid #facc15' : '3px solid #ffffff'};
+      box-shadow: 0 6px 14px rgba(46,125,50,0.45);
+      font-size: 20px;
       transform: translate(-50%, -50%);
     ">
       🚚
     </div>
   `,
-  iconSize: [36, 36],
-  iconAnchor: [18, 18],
+  iconSize: [42, 42],
+  iconAnchor: [21, 21],
 })
 
-// Component căn chỉnh bản đồ khi chọn thùng
-function MapController({ center }) {
+// Component giải quyết triệt để lỗi tính toán kích thước Leaflet
+function MapFixer({ center }) {
   const map = useMap()
   useEffect(() => {
-    if (center) {
-      map.setView(center, 15, { animate: true })
+    const fix = () => {
+      map.invalidateSize()
+      if (center && !isNaN(center[0]) && !isNaN(center[1])) {
+        map.setView(center, map.getZoom() || 15)
+      }
     }
-  }, [center, map])
+    fix()
+    const t1 = setTimeout(fix, 100)
+    const t2 = setTimeout(fix, 300)
+    const t3 = setTimeout(fix, 800)
+    return () => {
+      clearTimeout(t1)
+      clearTimeout(t2)
+      clearTimeout(t3)
+    }
+  }, [map, center])
   return null
 }
 
 export default function MobileMap() {
   const nav = useNavigate()
-  const [searchParams] = useSearchParams()
-  const mode = searchParams.get('mode') || 'bins'
+  const [searchParams, setSearchParams] = useSearchParams()
+  const mode = searchParams.get('mode') || 'truck' // 'truck' | 'bins'
 
   // Lấy dữ liệu thùng rác từ API
-  const { data, isLoading } = useQuery({
+  const { data } = useQuery({
     queryKey: ['bins'],
     queryFn: () => api('GET', '/bins?status=active&limit=100'),
     refetchInterval: 30000,
@@ -98,29 +117,72 @@ export default function MobileMap() {
 
   const bins = data?.items || []
 
-  // Vị trí người dùng / xe rác
-  const [userPos, setUserPos] = useState(() => {
-    const savedLat = localStorage.getItem('sw_lat')
-    const savedLng = localStorage.getItem('sw_lng')
-    return savedLat && savedLng ? [parseFloat(savedLat), parseFloat(savedLng)] : DEFAULT_CENTER
+  // Vị trí người dùng / xe gom rác an toàn
+  const userPos = useMemo(() => {
+    try {
+      const lat = parseCoord(localStorage.getItem('sw_lat'), DEFAULT_CENTER[0])
+      const lng = parseCoord(localStorage.getItem('sw_lng'), DEFAULT_CENTER[1])
+      return [lat, lng]
+    } catch {
+      return DEFAULT_CENTER
+    }
+  }, [])
+
+  // Thông tin đối tượng đang được chọn (Thùng rác HOẶC Xe gom rác)
+  const [selectedEntity, setSelectedEntity] = useState(() => {
+    return mode === 'truck'
+      ? { type: 'truck', name: 'Xe thu gom số 01', plate: '29H-882.14', driver: auth.user?.display_name || 'Nguyễn Văn Gom' }
+      : null
   })
 
-  // Thùng được chọn để hiển thị Bottom Sheet
-  const [selectedBin, setSelectedBin] = useState(null)
-
+  // Khi thay đổi mode từ URL hoặc toggle
   useEffect(() => {
-    if (bins.length > 0 && !selectedBin) {
-      // Mặc định chọn thùng đầu tiên hoặc thùng có mức rác 60% như nguyên mẫu
-      const target = bins.find((b) => Math.round(b.state?.fill_pct || 0) === 60) || bins[0]
-      setSelectedBin(target)
+    if (mode === 'truck') {
+      setSelectedEntity({
+        type: 'truck',
+        name: 'Xe thu gom số 01',
+        plate: '29H-882.14',
+        driver: auth.user?.display_name || 'Nguyễn Văn Gom',
+      })
+    } else if (bins.length > 0) {
+      const defaultBin = bins.find((b) => Math.round(b.state?.fill_pct || 0) === 60) || bins[0]
+      setSelectedEntity({ type: 'bin', data: defaultBin })
     }
-  }, [bins, selectedBin])
+  }, [mode, bins])
 
-  const curPct = selectedBin?.state?.fill_pct != null ? Math.round(selectedBin.state.fill_pct) : 60
+  // Lộ trình thu gom: Nối từ xe rác qua các thùng cần gom (fill_pct >= 50% hoặc alarm)
+  const routePoints = useMemo(() => {
+    const priorityBins = bins
+      .filter((b) => (b.state?.fill_pct || 0) >= 40 || b.state?.alarm_active)
+      .slice(0, 5)
+    return [userPos, ...priorityBins.map((b) => [b.lat, b.lng])]
+  }, [bins, userPos])
+
+  // Chuyển chế độ
+  const handleToggleMode = (newMode) => {
+    setSearchParams({ mode: newMode })
+    if (newMode === 'truck') {
+      setSelectedEntity({
+        type: 'truck',
+        name: 'Xe thu gom số 01',
+        plate: '29H-882.14',
+        driver: auth.user?.display_name || 'Nguyễn Văn Gom',
+      })
+    } else if (bins.length > 0) {
+      setSelectedEntity({ type: 'bin', data: bins[0] })
+    }
+  }
+
+  const centerPos = useMemo(() => {
+    if (selectedEntity?.type === 'bin' && selectedEntity.data) {
+      return [selectedEntity.data.lat, selectedEntity.data.lng]
+    }
+    return userPos
+  }, [selectedEntity, userPos])
 
   return (
     <div className="m-map-screen-container">
-      {/* Top Floating Bar */}
+      {/* Top Floating Controls */}
       <div className="m-map-top-bar">
         <button
           className="m-back-floating-btn"
@@ -130,13 +192,24 @@ export default function MobileMap() {
           <ArrowLeft size={22} />
         </button>
 
-        <div className="m-map-search-pill">
-          <Search size={16} color="#94a3b8" />
-          <span>{mode === 'truck' ? 'Đang điều hướng xe gom rác' : 'Tìm thùng rác theo bán kính…'}</span>
+        {/* Thanh chuyển chế độ Xe thu rác / Thùng rác */}
+        <div className="m-map-mode-toggle">
+          <button
+            className={`m-mode-btn ${mode === 'truck' ? 'active' : ''}`}
+            onClick={() => handleToggleMode('truck')}
+          >
+            <Truck size={16} /> Xe thu gom
+          </button>
+          <button
+            className={`m-mode-btn ${mode === 'bins' ? 'active' : ''}`}
+            onClick={() => handleToggleMode('bins')}
+          >
+            <Trash2 size={16} /> Thùng rác
+          </button>
         </div>
       </div>
 
-      {/* Bản đồ Leaflet */}
+      {/* Bản đồ tương tác Leaflet */}
       <div className="m-leaflet-map-wrapper">
         <MapContainer
           center={userPos}
@@ -149,9 +222,9 @@ export default function MobileMap() {
             url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
 
-          <MapController center={selectedBin ? [selectedBin.lat, selectedBin.lng] : userPos} />
+          <MapFixer center={centerPos} />
 
-          {/* Vòng tròn bán kính quét (Radius circle quanh tâm) */}
+          {/* Vòng tròn bán kính phục vụ của xe gom rác */}
           <Circle
             center={userPos}
             radius={650}
@@ -163,17 +236,44 @@ export default function MobileMap() {
             }}
           />
 
-          {/* Ghim xe gom rác */}
-          <Marker position={userPos} icon={truckIcon}>
+          {/* Đường lộ trình xe gom rác chạy qua các thùng */}
+          {mode === 'truck' && routePoints.length > 1 && (
+            <Polyline
+              positions={routePoints}
+              pathOptions={{
+                color: '#2e7d32',
+                weight: 4,
+                dashArray: '8, 8',
+                opacity: 0.85,
+              }}
+            />
+          )}
+
+          {/* Ghim Xe gom rác (Nhấn vào sẽ hiển thị thông tin xe) */}
+          <Marker
+            position={userPos}
+            icon={createTruckIcon(selectedEntity?.type === 'truck')}
+            eventHandlers={{
+              click: () => {
+                setSelectedEntity({
+                  type: 'truck',
+                  name: 'Xe thu gom số 01',
+                  plate: '29H-882.14',
+                  driver: auth.user?.display_name || 'Nguyễn Văn Gom',
+                })
+              },
+            }}
+          >
             <Popup>
-              <b>Xe thu gom rác số 01</b><br />
-              Đang hoạt động trong bán kính phục vụ
+              <b>🚚 Xe thu gom rác số 01</b><br />
+              Tài xế: {auth.user?.display_name || 'Nguyễn Văn Gom'}<br />
+              Trạng thái: Đang trên lộ trình
             </Popup>
           </Marker>
 
           {/* Ghim các thùng rác */}
           {bins.map((bin) => {
-            const isSelected = selectedBin?.id === bin.id
+            const isSelected = selectedEntity?.type === 'bin' && selectedEntity.data?.id === bin.id
             const fillPct = bin.state?.fill_pct
             return (
               <Marker
@@ -181,7 +281,9 @@ export default function MobileMap() {
                 position={[bin.lat, bin.lng]}
                 icon={createBinIcon(fillPct, isSelected)}
                 eventHandlers={{
-                  click: () => setSelectedBin(bin),
+                  click: () => {
+                    setSelectedEntity({ type: 'bin', data: bin })
+                  },
                 }}
               >
                 <Popup>
@@ -196,16 +298,71 @@ export default function MobileMap() {
       </div>
 
       {/* Bottom Sheet Information Card */}
-      {selectedBin && (
+      {selectedEntity?.type === 'truck' ? (
+        /* Thẻ thông tin khi CHỌN XE THU RÁC */
         <div className="m-map-bottom-sheet">
           <div className="m-sheet-header">
             <div>
               <h3 className="m-sheet-title">Information</h3>
               <p className="m-sheet-address">
-                {selectedBin.address || '12 Ngo Quyen street, Hoang Mai, HN'}
+                Tuyến số 01 · Khu vực Quận Hoàng Mai, Hà Nội
               </p>
             </div>
-            <div className="m-sheet-pct">{curPct}%</div>
+            <div className="m-sheet-pct" style={{ color: '#2e7d32', fontSize: 18 }}>
+              Đang chạy
+            </div>
+          </div>
+
+          <div className="m-sheet-body">
+            <div className="m-sheet-thumbnail">
+              <ImagePlaceholder
+                src="/images/truck-route.png"
+                label="Xe gom rác"
+                iconType="truck"
+              />
+            </div>
+
+            <div style={{ fontSize: 13, color: '#4b5563', flex: 1 }}>
+              <div><b>{selectedEntity.name}</b> (BKS: {selectedEntity.plate})</div>
+              <div style={{ color: '#6b7280', marginTop: 2 }}>
+                Người gom: <b>{selectedEntity.driver}</b>
+              </div>
+              <div style={{ color: '#2e7d32', fontWeight: 600, marginTop: 2 }}>
+                Lộ trình: {routePoints.length - 1} điểm cần gom rác
+              </div>
+            </div>
+
+            <button
+              className="m-sheet-nav-btn"
+              onClick={() => {
+                // Điều hướng tới thùng rác đầu tiên trên lộ trình
+                if (bins.length > 0) {
+                  const targetBin = bins.find((b) => (b.state?.fill_pct || 0) >= 50) || bins[0]
+                  nav(`/m/bins/${targetBin.id}`)
+                }
+              }}
+              title="Xem thùng rác trên tuyến"
+              aria-label="Xem thùng rác trên tuyến"
+            >
+              <Navigation size={22} color="#2e7d32" />
+            </button>
+          </div>
+        </div>
+      ) : selectedEntity?.type === 'bin' && selectedEntity.data ? (
+        /* Thẻ thông tin khi CHỌN THÙNG RÁC */
+        <div className="m-map-bottom-sheet">
+          <div className="m-sheet-header">
+            <div>
+              <h3 className="m-sheet-title">Information</h3>
+              <p className="m-sheet-address">
+                {selectedEntity.data.address || '12 Ngo Quyen street, Hoang Mai, HN'}
+              </p>
+            </div>
+            <div className="m-sheet-pct">
+              {selectedEntity.data.state?.fill_pct != null
+                ? Math.round(selectedEntity.data.state.fill_pct)
+                : 60}%
+            </div>
           </div>
 
           <div className="m-sheet-body">
@@ -217,16 +374,16 @@ export default function MobileMap() {
               />
             </div>
 
-            <div style={{ fontSize: 13, color: '#4b5563' }}>
-              <div><b>Mã thùng:</b> {selectedBin.code}</div>
+            <div style={{ fontSize: 13, color: '#4b5563', flex: 1 }}>
+              <div><b>Mã thùng:</b> {selectedEntity.data.code}</div>
               <div style={{ color: '#6b7280', marginTop: 2 }}>
-                Dung tích: {selectedBin.capacity_l || 240}L
+                Dung tích: {selectedEntity.data.capacity_l || 240}L
               </div>
             </div>
 
             <button
               className="m-sheet-nav-btn"
-              onClick={() => nav(`/m/bins/${selectedBin.id}`)}
+              onClick={() => nav(`/m/bins/${selectedEntity.data.id}`)}
               title="Xem chi tiết & biểu đồ phân tích"
               aria-label="Xem chi tiết"
             >
@@ -234,7 +391,7 @@ export default function MobileMap() {
             </button>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }

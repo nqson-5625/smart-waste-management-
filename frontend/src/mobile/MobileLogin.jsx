@@ -6,7 +6,7 @@ import ImagePlaceholder from './ImagePlaceholder'
 
 export default function MobileLogin() {
   const nav = useNavigate()
-  const [f, setF] = useState({ email: 'admin@smartwaste.local', password: 'password123' })
+  const [f, setF] = useState({ email: 'collector@smartwaste.local', password: 'password123' })
   const [showPwd, setShowPwd] = useState(false)
   const [err, setErr] = useState('')
   const [loading, setLoading] = useState(false)
@@ -18,6 +18,12 @@ export default function MobileLogin() {
     setLoading(true)
     try {
       const res = await api('POST', '/auth/login', { email: f.email, password: f.password })
+      // Mobile chỉ dành riêng cho người thu gom
+      if (!res.user?.roles?.includes('collector')) {
+        auth.clear()
+        setErr('Tài khoản này là Quản trị viên. Giao diện Mobile chỉ dành riêng cho Người thu gom (Collector). Vui lòng sử dụng Giao diện Web Desktop.')
+        return
+      }
       auth.set(res.access_token, res.user)
       nav('/m/home', { replace: true })
     } catch (error) {
@@ -97,21 +103,14 @@ export default function MobileLogin() {
 
           {/* Gợi ý tài khoản demo */}
           <div style={{ marginTop: 20, padding: 12, background: '#f8fafc', borderRadius: 12, border: '1px solid #f1f5f9', fontSize: 12, color: '#64748b' }}>
-            <div style={{ fontWeight: 700, marginBottom: 4, color: '#334155' }}>Chọn nhanh tài khoản thử nghiệm:</div>
+            <div style={{ fontWeight: 700, marginBottom: 4, color: '#334155' }}>Tài khoản Người thu gom:</div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button
                 type="button"
-                onClick={() => fillAccount('admin@smartwaste.local')}
-                style={{ background: '#e2e8f0', border: 'none', borderRadius: 6, padding: '4px 8px', fontSize: 11, cursor: 'pointer' }}
-              >
-                👑 Quản trị viên
-              </button>
-              <button
-                type="button"
                 onClick={() => fillAccount('collector@smartwaste.local')}
-                style={{ background: '#e2e8f0', border: 'none', borderRadius: 6, padding: '4px 8px', fontSize: 11, cursor: 'pointer' }}
+                style={{ background: '#e8f5e9', color: '#2e7d32', border: '1px solid #c8e6c9', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
               >
-                🚛 Người thu gom
+                🚛 collector@smartwaste.local
               </button>
             </div>
           </div>
