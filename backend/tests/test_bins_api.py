@@ -43,10 +43,11 @@ def test_create_bin_rules(client, admin, auth_as):
     assert client.post("/api/v1/bins", json=NEW_BIN, headers=admin).status_code == 201
     assert_error(client.post("/api/v1/bins", json=NEW_BIN, headers=admin), 409, "CONFLICT")
     assert_error(client.post("/api/v1/bins", json={**NEW_BIN, "code": "WB-9"},
-                             headers=auth_as("dispatcher")), 403, "FORBIDDEN")
+                             headers=auth_as("collector")), 403, "FORBIDDEN")
     for bad in ({"waste_type": "plastic"}, {"capacity_l": 0}, {"code": "WB 9"},
                 {"location": {"type": "Point", "coordinates": [200, 21]}},
-                {"location": None, "lat": 21.0}):
+                {"location": None, "lat": 21.0},
+                {"location": None}):  # field bins must have coordinates
         assert_error(client.post("/api/v1/bins", json={**NEW_BIN, "code": "WB-9", **bad},
                                  headers=admin), 422, "VALIDATION")
 
@@ -77,6 +78,8 @@ def test_update_bin_rules(client, admin, auth_as):
     assert_error(client.patch("/api/v1/bins/WB-201", json={"name": None}, headers=admin),
                  422, "VALIDATION")
     assert_error(client.patch("/api/v1/bins/WB-201", json={"status": "gone"}, headers=admin),
+                 422, "VALIDATION")
+    assert_error(client.patch("/api/v1/bins/WB-201", json={"location": None}, headers=admin),
                  422, "VALIDATION")
     assert_error(client.patch("/api/v1/bins/WB-201", json={"name": "x"},
                               headers=auth_as("collector")), 403, "FORBIDDEN")

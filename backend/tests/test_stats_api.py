@@ -31,7 +31,7 @@ def test_waste_by_type(client, wdb, auth_as):
     insert_collection(wdb, "ev-3", "WB-ORG", "organic", inside, weight=3.0)
     insert_collection(wdb, "ev-old", BIN, "general", START - timedelta(days=2), weight=99.0)
 
-    response = client.get(f"/api/v1/stats/waste-by-type?{window()}", headers=auth_as("dispatcher"))
+    response = client.get(f"/api/v1/stats/waste-by-type?{window()}", headers=auth_as("admin"))
     assert response.status_code == 200, response.text
     rows = by_type(response.json())
     assert list(rows) == ["general", "organic", "recyclable", "hazardous", "other"]
@@ -59,5 +59,7 @@ def test_stats_rules(client, wdb, auth_as):
     assert_error(client.get(f"/api/v1/stats/waste-by-type?{end_before_start}", headers=admin),
                  422, "VALIDATION")
     assert_error(client.get("/api/v1/stats/waste-by-type", headers=admin), 422, "VALIDATION")
-    assert_error(client.get(f"/api/v1/stats/waste-by-type?{window()}",
-                            headers=auth_as("collector")), 403, "FORBIDDEN")
+    # the collector's mobile app shows statistics too
+    assert client.get(f"/api/v1/stats/waste-by-type?{window()}",
+                      headers=auth_as("collector")).status_code == 200
+    assert_error(client.get(f"/api/v1/stats/waste-by-type?{window()}"), 401, "UNAUTHORIZED")
