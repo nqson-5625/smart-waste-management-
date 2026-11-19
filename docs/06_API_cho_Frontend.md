@@ -8,7 +8,7 @@ Phạm vi: 25 endpoint, lấy theo danh sách trong `smartwastew1.txt` của Dũ
 
 - Base URL dev: `http://localhost:8000/api/v1`. JSON UTF-8. CORS cho origin dev của frontend (Dũng cho biết port).
 - Xác thực: `Authorization: Bearer <access_token>` cho mọi endpoint trừ `POST /auth/login` và `GET /health`.
-- Vai trò: `admin`, `dispatcher` (điều phối), `collector` (thu gom). Backend lấy vai trò và user từ token, **không** tin `role`/`worker_id` trong body.
+- Vai trò: `admin` (quản trị, gồm cả việc điều phối) và `collector` (thu gom). Nhóm đã bỏ vai trò `dispatcher` (19/11): mọi quyền điều phối thuộc về admin. Web dành cho admin, app mobile dành cho collector. Backend lấy vai trò và user từ token, **không** tin `role`/`worker_id` trong body.
 - Thời gian: ISO-8601 UTC có `Z` (`2026-10-16T08:00:00Z`); frontend tự đổi sang Asia/Ho_Chi_Minh khi hiển thị.
 - Tọa độ: `location = {"type":"Point","coordinates":[lng, lat]}`. Mọi phản hồi có thùng kèm thêm `lat`, `lng` để dùng thẳng với Leaflet.
 - Giá trị thiếu là `null`, không dùng 0 hay chuỗi rỗng. `fill_pct = null` nghĩa là chưa có số đo tốt, **không phải thùng rỗng**.
@@ -25,27 +25,27 @@ Phạm vi: 25 endpoint, lấy theo danh sách trong `smartwastew1.txt` của Dũ
 | 2   | POST   | `/auth/login`            | công khai                                         | Cao     |
 | 3   | GET    | `/bins`                  | mọi user đã đăng nhập                             | Cao     |
 | 4   | GET    | `/bins/{id}`             | mọi user đã đăng nhập                             | Cao     |
-| 5   | GET    | `/bins/{id}/telemetry`   | admin, dispatcher                                 | Cao     |
-| 6   | GET    | `/alerts`                | admin, dispatcher, collector                      | Cao     |
+| 5   | GET    | `/bins/{id}/telemetry`   | admin                                             | Cao     |
+| 6   | GET    | `/alerts`                | admin, collector                                  | Cao     |
 | 7   | POST   | `/bins`                  | admin                                             | Trung   |
 | 8   | PATCH  | `/bins/{id}`             | admin                                             | Trung   |
 | 9   | POST   | `/devices`               | admin                                             | Trung   |
 | 10  | POST   | `/bins/{id}/assignments` | admin                                             | Trung   |
 | 11  | POST   | `/collection-events`     | collector, admin                                  | Trung   |
-| 12  | GET    | `/stats/waste-by-type`   | admin, dispatcher                                 | Trung   |
-| 13  | POST   | `/routes/suggest`        | admin, dispatcher                                 | Thấp    |
+| 12  | GET    | `/stats/waste-by-type`   | admin, collector                                  | Trung   |
+| 13  | POST   | `/routes/suggest`        | admin                                             | Thấp    |
 | 14  | GET    | `/auth/me`               | mọi user đã đăng nhập                             | Cao     |
-| 15  | POST   | `/alerts/{id}/ack`       | admin, dispatcher, collector                      | Cao     |
+| 15  | POST   | `/alerts/{id}/ack`       | admin, collector                                  | Cao     |
 | 16  | POST   | `/users`                 | admin                                             | Trung   |
 | 17  | PATCH  | `/users/{id}`            | admin                                             | Trung   |
-| 18  | GET    | `/users`                 | admin, dispatcher (chỉ thấy collector)            | Trung   |
+| 18  | GET    | `/users`                 | admin                                             | Trung   |
 | 19  | POST   | `/auth/change-password`  | mọi user đã đăng nhập                             | Thấp    |
 | 20  | POST   | `/devices/{id}/configs`  | admin                                             | Trung   |
-| 21  | POST   | `/routes`                | admin, dispatcher                                 | Thấp    |
-| 22  | GET    | `/routes`                | admin, dispatcher, collector (chỉ tuyến của mình) | Thấp    |
+| 21  | POST   | `/routes`                | admin                                             | Thấp    |
+| 22  | GET    | `/routes`                | admin, collector (chỉ tuyến của mình)             | Thấp    |
 | 23  | PATCH  | `/routes/{id}/status`    | xem mục 3.14                                      | Thấp    |
-| 24  | GET    | `/reports/routes`        | admin, dispatcher                                 | Thấp    |
-| 25  | GET    | `/collection-events`     | admin, dispatcher, collector (chỉ của mình)       | Trung   |
+| 24  | GET    | `/reports/routes`        | admin                                             | Thấp    |
+| 25  | GET    | `/collection-events`     | admin, collector (chỉ của mình)                   | Trung   |
 
 Làm theo thứ tự ưu tiên: các endpoint "Cao" có trước để Dũng dựng UI.
 
@@ -127,13 +127,13 @@ Không cần body. Đặt `status = acknowledged`, ghi `acknowledged_by` (từ t
 
 ### 3.6 `POST /bins` (201)
 
-Body: `code`, `name`, `address`, `ward_code`, `waste_type`, `location` (hoặc `lat`,`lng`), `capacity_l?`, `notes?`. `id` của thùng chính là `code` (ví dụ `WB-001`); Backend tự đặt `status=active`, `environment=field`. 409 nếu trùng `code`. Trả thùng vừa tạo theo cùng dạng một phần tử của `GET /bins` (`state = null` vì chưa gắn thiết bị).
+Body: `code`, `name`, `address`, `ward_code`, `waste_type`, `location` (hoặc `lat`,`lng`; **bắt buộc**, thiếu tọa độ trả 422 vì thùng phải lên được bản đồ và vào tuyến), `capacity_l?`, `notes?`. `id` của thùng chính là `code` (ví dụ `WB-001`); Backend tự đặt `status=active`, `environment=field`. 409 nếu trùng `code`. Trả thùng vừa tạo theo cùng dạng một phần tử của `GET /bins` (`state = null` vì chưa gắn thiết bị).
 
 Ràng buộc (sai trả 422): `code` chỉ gồm chữ, số, `-`, `_`, `:` (tối đa 40 ký tự, không dấu cách); `capacity_l` từ 1 đến 100000 (bỏ trống = null, không gửi 0); tọa độ `[kinh độ -180..180, vĩ độ -90..90]`; gửi `lat` thì phải gửi cả `lng`.
 
 ### 3.7 `PATCH /bins/{id}`
 
-Sửa một phần: `name`, `address`, `ward_code`, `waste_type`, `location`, `capacity_l`, `status`, `notes`. Chỉ trường có mặt trong body mới bị đổi. Không sửa `id`, `code`, `environment` (gửi lên sẽ bị bỏ qua). Không xóa thùng: "xóa" là `{"status":"retired"}`. `capacity_l`, `notes`, `location` được đặt `null`; các trường khác không được `null`. Body rỗng trả 422. Trả thùng sau khi sửa.
+Sửa một phần: `name`, `address`, `ward_code`, `waste_type`, `location`, `capacity_l`, `status`, `notes`. Chỉ trường có mặt trong body mới bị đổi. Không sửa `id`, `code`, `environment` (gửi lên sẽ bị bỏ qua). Không xóa thùng: "xóa" là `{"status":"retired"}`. `capacity_l`, `notes` được đặt `null`; các trường khác (kể cả `location`) không được `null`. Body rỗng trả 422. Trả thùng sau khi sửa.
 
 ### 3.8 `POST /devices` (201)
 
@@ -155,18 +155,22 @@ Body: `device_id`, `reason`. Gắn hoặc thay thiết bị cho thùng trong m�
 Bắt buộc header `Idempotency-Key` (UUID do client sinh, dùng lại khi gửi lại). Body: `bin_id`, `completed_at`, `measured_weight_kg?` (null nếu không có cân), `weight_source?` (`scale|manual|unknown`), `fill_before_pct?`, `fill_after_pct?`, `note?`.
 
 - Cùng key và cùng nội dung: trả lại bản ghi cũ (200). Cùng key, nội dung khác: 409.
-- `completed_at` không được ở tương lai quá 5 phút.
-- `worker_id` lấy từ token.
-- Thu gom theo tuyến: gửi thêm `route_id` và `stop_order`. Tuyến phải `in_progress`, được giao cho chính user này, điểm dừng khớp `bin_id` và chưa thu gom; thành công thì điểm dừng chuyển `collected`. Thu gom ngoài tuyến: bỏ hai trường này (null).
+- Thiếu header `Idempotency-Key` trả 422. Mỗi lần bấm "Đã thu" sinh một key mới; chỉ dùng lại key khi gửi lại đúng yêu cầu đó (mất mạng, hết thời gian chờ).
+- `completed_at` không được ở tương lai quá 5 phút (422).
+- `worker_id` lấy từ token. `waste_type` lấy theo thùng tại lúc thu gom.
+- Cân: có `measured_weight_kg` thì `weight_source` là `scale` hoặc `manual` (bỏ trống thì mặc định `manual`); không có cân thì bỏ cả hai, Backend lưu `weight_source = unknown`. Gửi `weight_source` mà không có số kg trả 422.
+- Thùng không tồn tại: 404. Thùng đã `retired`: 409.
+- Thu gom theo tuyến: gửi thêm `route_id` và `stop_order` (phải đi cùng nhau, thiếu một trả 422). Tuyến không tồn tại 404; không giao cho user này 403; chưa `in_progress` hoặc điểm dừng đã thu/bỏ qua 409; điểm dừng không khớp `bin_id` hoặc `completed_at` trước lúc bắt đầu tuyến 422. Thành công thì điểm dừng chuyển `collected`. Thu gom ngoài tuyến: bỏ hai trường này (null). Hoàn thành cả tuyến vẫn qua `PATCH /routes/{id}/status`.
+- Trả phần tử cùng dạng `GET /collection-events`.
 - Thu gom **không** tự đặt `fill_pct` về 0 và không đóng cảnh báo; UI có thể hiển thị "đã thu gom, chờ cảm biến xác nhận" (xem `last_collected_at` ở mục 3.2).
 
 ### 3.10b `GET /collection-events`
 
-Lịch sử thu gom, mới nhất trước. Query: `bin_id`, `worker_id`, `route_id`, `from`, `to`, `limit`, `cursor`. Collector chỉ thấy lượt của mình (Backend tự lọc). Phần tử: `{"id","bin_id","worker_id","worker_name","route_id","stop_order","completed_at","recorded_at","waste_type","measured_weight_kg","weight_source","fill_before_pct","fill_after_pct","note"}`.
+Lịch sử thu gom, mới nhất trước. Query (đều không bắt buộc): `bin_id`, `worker_id`, `route_id`, `from`, `to`, `limit`, `cursor`; `from > to` trả 422. Quyền: admin, collector. Collector chỉ thấy lượt của mình (Backend tự lọc, bỏ qua `worker_id` gửi lên). Phần tử: `{"id","bin_id","worker_id","worker_name","route_id","stop_order","completed_at","recorded_at","waste_type","measured_weight_kg","weight_source","fill_before_pct","fill_after_pct","note"}`.
 
 ### 3.11 `GET /stats/waste-by-type`
 
-Query: `from`, `to` (bắt buộc). Trả `{"items":[...]}` (không phân trang), luôn đủ 5 phần tử theo thứ tự `general, organic, recyclable, hazardous, other`:
+Quyền: admin, collector (app mobile có màn thống kê). Query: `from`, `to` (bắt buộc). Trả `{"items":[...]}` (không phân trang), luôn đủ 5 phần tử theo thứ tự `general, organic, recyclable, hazardous, other`:
 `{"waste_type","bin_count","collection_count","avg_fill_pct","known_weight_kg","known_weight_count","unknown_weight_count"}`.
 
 - `bin_count`: số thùng đang dùng (field, chưa `retired`) thuộc loại đó.
@@ -202,24 +206,24 @@ Gợi ý thứ tự ghé các thùng cần thu gom (nearest neighbor, khoảng c
 
 ### 3.13 Quản lý người dùng (chỉ admin)
 
-Dùng để admin tạo tài khoản cho nhân viên thu gom và điều phối. Không bao giờ trả `password_hash`.
+Dùng để admin tạo tài khoản cho nhân viên thu gom và cho admin khác. Không bao giờ trả `password_hash`.
 
-- `POST /users` (201): body `{"email","display_name","password","roles":["collector"],"phone?"}`. `roles` gồm 1 đến 3 giá trị trong `admin|dispatcher|collector`; mật khẩu tối thiểu 8 ký tự; tài khoản tạo xong ở trạng thái `active`. 409 nếu trùng email (không phân biệt hoa thường). Trả `{"id","email","display_name","roles","status","phone","created_at"}`.
-- `PATCH /users/{id}`: sửa một phần `display_name`, `roles`, `status` (`active|disabled`), `phone`, và `password` (admin đặt lại mật khẩu khi người dùng quên). Admin không được tự khóa hoặc tự bỏ quyền admin của chính mình (409). Tài khoản `disabled` mất hiệu lực ngay ở request kế tiếp.
-- `GET /users`: query `role`, `status`, `limit`, `cursor`; trả `{"items":[...],"next_cursor":...}` với phần tử như kết quả `POST /users`, thêm `last_login_at`. Dispatcher cũng gọi được để chọn người khi giao tuyến, nhưng chỉ nhận về tài khoản `collector` đang `active` và không có `email`, `phone`, `last_login_at`. Ví dụ: `GET /users?role=collector&status=active`.
+- `POST /users` (201): body `{"email","display_name","password","roles":["collector"],"phone?"}`. `roles` gồm 1 đến 2 giá trị **không lặp** trong `admin|collector` (gửi `dispatcher` trả 422); mật khẩu 8 đến 72 ký tự; tài khoản tạo xong ở trạng thái `active`, đăng nhập được ngay. Email được lưu chữ thường; 409 nếu trùng email (không phân biệt hoa thường). Trả `{"id","email","display_name","roles","status","phone","last_login_at","created_at"}`.
+- `PATCH /users/{id}`: sửa một phần `display_name`, `roles`, `status` (`active|disabled`), `phone` (được đặt `null`), và `password` (admin đặt lại mật khẩu khi người dùng quên). Các trường khác `phone` không được `null`; body rỗng 422; không có tài khoản 404. Admin không được tự khóa hoặc tự bỏ quyền admin của chính mình (409). Tài khoản `disabled` mất hiệu lực ngay ở request kế tiếp. Kích hoạt tài khoản chưa có mật khẩu phải gửi kèm `password` (không thì 422). Trả cùng dạng `POST /users`.
+- `GET /users`: query `role`, `status` (`pending|active|disabled`), `limit`, `cursor`; trả `{"items":[...],"next_cursor":...}` với phần tử như kết quả `POST /users`, sắp theo `id`. Chỉ admin gọi được (collector trả 403). Chọn người khi giao tuyến: `GET /users?role=collector&status=active`.
 
 ### 3.14 Tuyến thu gom
 
-- `POST /routes` (201, admin/dispatcher): body `{"service_date":"2026-10-20","assigned_worker_id":"<id collector>|null","depot":{"lng","lat"},"bin_ids":["WB-001","WB-007"]}`. `bin_ids` theo đúng thứ tự ghé (thường lấy từ kết quả `POST /routes/suggest`), 1 đến 200 thùng, không lặp. Backend chụp lại tọa độ và mức đầy từng thùng tại lúc lập tuyến, tính `planned_distance_m` và `baseline_distance_m` cùng cách với `/routes/suggest`. Có `assigned_worker_id` thì `status = assigned`, không thì `planned`.
+- `POST /routes` (201, admin): body `{"service_date":"2026-10-20","assigned_worker_id":"<id collector>|null","depot":{"lng","lat"},"bin_ids":["WB-001","WB-007"]}`. `bin_ids` theo đúng thứ tự ghé (thường lấy từ kết quả `POST /routes/suggest`), 1 đến 200 thùng, không lặp. Backend chụp lại tọa độ và mức đầy từng thùng tại lúc lập tuyến, tính `planned_distance_m` và `baseline_distance_m` cùng cách với `/routes/suggest`. Có `assigned_worker_id` thì `status = assigned`, không thì `planned`.
 - `GET /routes`: query `service_date`, `status`, `assigned_worker_id`, `limit`, `cursor`. Collector chỉ thấy tuyến được giao cho mình (Backend tự lọc). Phần tử: `{"id","service_date","status","assigned_worker_id","depot","stops":[{"stop_order","bin_id","lat","lng","planned_fill_pct","status":"pending|collected|skipped","completed_at","skip_reason"}],"planned_distance_m","baseline_distance_m","actual_distance_m","started_at","completed_at"}`.
 - `PATCH /routes/{id}/status`: body `{"status", ...}`. Chuyển trạng thái hợp lệ:
 
 | Từ → sang                              | Ai được làm         | Body thêm                                                                                         |
 | -------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------- |
-| `planned` → `assigned`                 | admin, dispatcher   | `assigned_worker_id`                                                                              |
+| `planned` → `assigned`                 | admin               | `assigned_worker_id`                                                                              |
 | `assigned` → `in_progress`             | collector được giao |                                                                                                   |
 | `in_progress` → `completed`            | collector được giao | `actual_distance_m?`, `actual_distance_source?` (`odometer`, `gps` hoặc `manual`), `skip_reason?` |
-| bất kỳ trước `completed` → `cancelled` | admin, dispatcher   |                                                                                                   |
+| bất kỳ trước `completed` → `cancelled` | admin               |                                                                                                   |
 
 Khi `completed`, các điểm dừng còn `pending` chuyển `skipped` với `skip_reason` (bắt buộc nếu còn điểm `pending`). Chuyển sai trả 409.
 
