@@ -50,7 +50,7 @@ def test_create_device_rules(client, admin, auth_as):
         assert_error(client.post("/api/v1/devices", json={**device_body("bin-703"), **bad},
                                  headers=admin), 422, "VALIDATION")
     assert_error(client.post("/api/v1/devices", json=device_body("bin-704"),
-                             headers=auth_as("dispatcher")), 403, "FORBIDDEN")
+                             headers=auth_as("collector")), 403, "FORBIDDEN")
 
 
 # ---------------------------------------------------------------- configs
@@ -158,5 +158,5 @@ def test_assignment_rules(client, admin, wdb, auth_as):
     client.post("/api/v1/devices", json=device_body("bin-702"), headers=admin)
     assert_error(client.post("/api/v1/bins/WB-302/assignments", headers=admin,
                              json={"device_id": "bin-702", "reason": "x"}), 409, "CONFLICT")
-    assert_error(client.post("/api/v1/bins/WB-301/assignments", headers=auth_as("dispatcher"),
+    assert_error(client.post("/api/v1/bins/WB-301/assignments", headers=auth_as("collector"),
                              json={"device_id": "bin-702", "reason": "x"}), 403, "FORBIDDEN")

@@ -51,6 +51,6 @@ def bin_telemetry(
     to: datetime = Query(),
     limit: int = Limit,
     cursor: str | None = None,
-    user=Depends(require_roles("admin", "dispatcher")),
+    user=Depends(admin_only),
 ):
     return bins_service.bin_telemetry(bin_id, naive_utc(from_), naive_utc(to), limit, cursor)

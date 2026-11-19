@@ -39,7 +39,7 @@ def test_list_bins_shows_state_and_hides_lab_bins(client, full_bin, auth_as):
 
 def test_list_bins_filters_full_and_fresh(client, full_bin, auth_as):
     insert_bin(full_bin, "WB-T2")
-    headers = auth_as("dispatcher")
+    headers = auth_as("admin")
     assert [b["id"] for b in client.get("/api/v1/bins?full=true", headers=headers)
             .json()["items"]] == [BIN]
     assert [b["id"] for b in client.get("/api/v1/bins?full=false", headers=headers)
@@ -83,7 +83,7 @@ def window():
 
 def test_telemetry_history_newest_first_with_paging(client, full_bin, auth_as):
     start, end = window()
-    headers = auth_as("dispatcher")
+    headers = auth_as("admin")
     url = f"/api/v1/bins/{BIN}/telemetry?from={start}&to={end}&limit=1"
     page1 = client.get(url, headers=headers).json()
     assert [row["reason"] for row in page1["items"]] == ["full"]
@@ -126,7 +126,7 @@ def test_alert_list_and_ack_flow(client, full_bin, auth_as):
 
 
 def test_ack_errors(client, full_bin, auth_as):
-    headers = auth_as("dispatcher")
+    headers = auth_as("admin")
     alert_id = client.get("/api/v1/alerts", headers=headers).json()["items"][0]["id"]
     send(full_bin, 3, reason="cleared", fill=5.0, alarm=False)
     run_all(full_bin)  # sensor clears -> alert resolved
