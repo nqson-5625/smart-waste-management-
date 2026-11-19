@@ -16,7 +16,10 @@ from fastapi.responses import JSONResponse
 from pymongo.errors import PyMongoError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from .api import alerts_router, auth_router, bins_router, devices_router, stats_router
+from .api import (
+    alerts_router, auth_router, bins_router, collection_events_router, devices_router,
+    stats_router, users_router,
+)
 from .core.config import get_settings
 from .core.db import get_database
 from .core.errors import ApiError, CODES
@@ -100,4 +103,6 @@ api.include_router(bins_router.router)
 api.include_router(devices_router.router)
 api.include_router(alerts_router.router)
 api.include_router(stats_router.router)
+api.include_router(users_router.router)
+api.include_router(collection_events_router.router)
 app.include_router(api)
