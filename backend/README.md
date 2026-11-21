@@ -77,6 +77,7 @@ smartwaste_backend/
 | `core/common.py` | Thời gian ISO, cursor phân trang, tính `fresh` |
 | `api/auth_router.py` + `services/auth_service.py` | `POST /auth/login`, `GET /auth/me`, `POST /auth/change-password` |
 | `api/bins_router.py` + `services/bins_service.py` | `GET /bins`, `/bins/{id}`, `/bins/{id}/telemetry`, `POST /bins`, `PATCH /bins/{id}` |
+| `api/bin_photos_router.py` + `services/bin_photos_service.py` | `PUT`/`GET`/`DELETE /bins/{id}/photo`: ảnh vị trí thùng, lưu trong GridFS bucket `bin_photos` |
 | `api/devices_router.py` + `services/devices_service.py` | `POST /devices`, `POST /devices/{id}/configs`, `POST /bins/{id}/assignments` |
 | `api/alerts_router.py` + `services/alerts_service.py` | `GET /alerts`, `POST /alerts/{id}/ack` |
 | `api/stats_router.py` + `services/stats_service.py` | `GET /stats/waste-by-type` |

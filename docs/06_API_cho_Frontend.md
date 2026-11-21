@@ -2,7 +2,7 @@
 
 **Người viết:** Đỗ Thanh Sơn (Backend) · **Người đọc:** Dũng (Web/App) · **Trạng thái:** đề xuất để chốt, **chưa có server chạy**.
 
-Phạm vi: 25 endpoint, lấy theo danh sách trong `smartwastew1.txt` của Dũng (web và mobile) cộng nhóm quản lý người dùng. Phủ các yêu cầu chức năng của đề bài: quản lý thùng, bản đồ, cảnh báo, thống kê theo loại, lập và giao tuyến, xác nhận thu gom, quản lý người dùng. Backend chỉ đọc/ghi dữ liệu nghiệp vụ; dữ liệu cảm biến vào MongoDB qua `iot-ingestion` (xem `03_Backend_contract.md`).
+Phạm vi: 28 endpoint, lấy theo danh sách trong `smartwastew1.txt` của Dũng (web và mobile) cộng nhóm quản lý người dùng và ảnh vị trí thùng (nhóm thêm 21/11). Phủ các yêu cầu chức năng của đề bài: quản lý thùng, bản đồ, cảnh báo, thống kê theo loại, lập và giao tuyến, xác nhận thu gom, quản lý người dùng. Backend chỉ đọc/ghi dữ liệu nghiệp vụ; dữ liệu cảm biến vào MongoDB qua `iot-ingestion` (xem `03_Backend_contract.md`).
 
 ## 1. Quy ước chung
 
@@ -13,8 +13,8 @@ Phạm vi: 25 endpoint, lấy theo danh sách trong `smartwastew1.txt` của Dũ
 - Tọa độ: `location = {"type":"Point","coordinates":[lng, lat]}`. Mọi phản hồi có thùng kèm thêm `lat`, `lng` để dùng thẳng với Leaflet.
 - Giá trị thiếu là `null`, không dùng 0 hay chuỗi rỗng. `fill_pct = null` nghĩa là chưa có số đo tốt, **không phải thùng rỗng**.
 - Phân trang: `limit` (mặc định 50, tối đa 100) và `cursor` (chuỗi do server trả, không tự tạo). Phản hồi danh sách có dạng `{"items":[...],"next_cursor":"..."|null}`.
-- Mã trạng thái: 200/201 thành công; 400/422 dữ liệu sai; 401 chưa đăng nhập; 403 thiếu quyền; 404 không tồn tại; 409 xung đột (trùng khóa, sai idempotency).
-- Lỗi: `{"code":"VALIDATION","message":"...","request_id":"req-9f3a","details":{}}`. `code` thuộc: `VALIDATION`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`.
+- Mã trạng thái: 200/201 thành công; 400/422 dữ liệu sai; 401 chưa đăng nhập; 403 thiếu quyền; 404 không tồn tại; 409 xung đột (trùng khóa, sai idempotency); 413 file quá lớn.
+- Lỗi: `{"code":"VALIDATION","message":"...","request_id":"req-9f3a","details":{}}`. `code` thuộc: `VALIDATION`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `TOO_LARGE`.
 - Chỉ thêm trường mới, không đổi tên hay xóa trường đã chốt; thay đổi phải báo Dũng trước.
 
 ## 2. Danh sách endpoint
@@ -46,6 +46,9 @@ Phạm vi: 25 endpoint, lấy theo danh sách trong `smartwastew1.txt` của Dũ
 | 23  | PATCH  | `/routes/{id}/status`    | xem mục 3.14                                      | Thấp    |
 | 24  | GET    | `/reports/routes`        | admin                                             | Thấp    |
 | 25  | GET    | `/collection-events`     | admin, collector (chỉ của mình)                   | Trung   |
+| 26  | PUT    | `/bins/{id}/photo`       | admin                                             | Trung   |
+| 27  | GET    | `/bins/{id}/photo`       | admin, collector                                  | Trung   |
+| 28  | DELETE | `/bins/{id}/photo`       | admin                                             | Trung   |
 
 Làm theo thứ tự ưu tiên: các endpoint "Cao" có trước để Dũng dựng UI.
 
@@ -108,7 +111,7 @@ Query: `ward_code`, `waste_type` (`general|organic|recyclable|hazardous|other`),
 
 ### 3.3 `GET /bins/{id}`
 
-Trả như một phần tử của `/bins`, thêm `notes`, `device` (`{id, lifecycle, enabled}` hoặc null) và `open_alerts` (cảnh báo còn hiệu lực của thùng: cả `open` lẫn `acknowledged`, mới nhất trước; gồm cảnh báo đầy và lỗi cảm biến). 404 nếu không tồn tại.
+Trả như một phần tử của `/bins`, thêm `notes`, `device` (`{id, lifecycle, enabled}` hoặc null) và `open_alerts` (cảnh báo còn hiệu lực của thùng: cả `open` lẫn `acknowledged`, mới nhất trước; gồm cảnh báo đầy và lỗi cảm biến) và `has_photo` (`true` nếu thùng có ảnh vị trí, xem mục 3.7b). 404 nếu không tồn tại.
 
 ### 3.4 `GET /bins/{id}/telemetry`
 
@@ -134,6 +137,21 @@ Ràng buộc (sai trả 422): `code` chỉ gồm chữ, số, `-`, `_`, `:` (t�
 ### 3.7 `PATCH /bins/{id}`
 
 Sửa một phần: `name`, `address`, `ward_code`, `waste_type`, `location`, `capacity_l`, `status`, `notes`. Chỉ trường có mặt trong body mới bị đổi. Không sửa `id`, `code`, `environment` (gửi lên sẽ bị bỏ qua). Không xóa thùng: "xóa" là `{"status":"retired"}`. `capacity_l`, `notes` được đặt `null`; các trường khác (kể cả `location`) không được `null`. Body rỗng trả 422. Trả thùng sau khi sửa.
+
+### 3.7b Ảnh vị trí đặt thùng: `PUT`, `GET`, `DELETE /bins/{id}/photo`
+
+Admin chụp chỗ đặt thùng để collector ra đến nơi nhận ra đúng thùng (tọa độ GPS lệch vài mét). Mỗi thùng **một ảnh**, ảnh mới thay ảnh cũ.
+
+- **Tạo thùng có ảnh** gồm 2 bước: `POST /bins` (JSON như mục 3.6), thành công thì gọi `PUT /bins/{id}/photo` nếu admin có chọn ảnh. Sửa thùng thì gọi lại `PUT` để đổi ảnh.
+- `PUT` (admin): body `multipart/form-data`, field tên `photo`. Nhận JPEG, PNG, WebP, tối đa **2 MB**; backend kiểm tra nội dung file, không dựa vào đuôi tên. Trả `{"bin_id","content_type","size_bytes"}`. Lỗi: không phải ảnh hoặc thiếu field `photo` → 422; quá 2 MB → 413 `TOO_LARGE`; thùng không tồn tại → 404.
+- `GET` (admin, collector): trả **file ảnh** (`image/jpeg|png|webp`), không phải JSON. 404 nếu thùng chưa có ảnh; nên xem `has_photo` của `GET /bins/{id}` trước khi gọi.
+- `DELETE` (admin): 204; 404 nếu chưa có ảnh.
+
+Gợi ý frontend:
+
+- Ô chọn ảnh: `<input type="file" accept="image/jpeg,image/png,image/webp">`; trên điện thoại ô này cho chọn chụp bằng camera. Ảnh điện thoại thường lớn hơn 2 MB: nên thu nhỏ trước khi gửi (vẽ lên `<canvas>` cạnh dài ~1600 px rồi `canvas.toBlob(cb, "image/jpeg", 0.8)`).
+- Gửi: `const fd = new FormData(); fd.append("photo", file); fetch(url, {method: "PUT", headers: {Authorization}, body: fd})`. **Không** tự đặt header `Content-Type`, trình duyệt tự thêm `boundary`.
+- Hiển thị: thẻ `<img src>` không gửi được token, nên `fetch` kèm `Authorization`, rồi `img.src = URL.createObjectURL(await res.blob())`.
 
 ### 3.8 `POST /devices` (201)
 

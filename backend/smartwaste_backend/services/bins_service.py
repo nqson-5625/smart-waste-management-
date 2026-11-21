@@ -8,7 +8,7 @@ from ..core.common import (
 )
 from ..core.db import get_database
 from ..core.errors import ApiError
-from . import alerts_service, audit_service
+from . import alerts_service, audit_service, bin_photos_service
 from .telemetry_service import list_telemetry
 
 
@@ -122,6 +122,7 @@ def get_bin(bin_id):
                       "enabled": found["enabled"]}
 
     return {**bin_view(doc, utcnow()), "notes": doc["notes"], "device": device,
+            "has_photo": bin_photos_service.has_photo(database, bin_id),
             "open_alerts": alerts_service.active_for_bin(bin_id)}
 
 
