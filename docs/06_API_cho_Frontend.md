@@ -7,7 +7,7 @@ Phạm vi: 28 endpoint, lấy theo danh sách trong `smartwastew1.txt` của Dũ
 ## 1. Quy ước chung
 
 - Base URL dev: `http://localhost:8000/api/v1`. JSON UTF-8. CORS cho origin dev của frontend (Dũng cho biết port).
-- Xác thực: `Authorization: Bearer <access_token>` cho mọi endpoint trừ `POST /auth/login` và `GET /health`.
+- Xác thực: `Authorization: Bearer <access_token>` cho mọi endpoint trừ `POST /auth/login`, `GET /health` và link ảnh `photo_url` (link đã có chữ ký, mục 3.7b).
 - Vai trò: `admin` (quản trị, gồm cả việc điều phối) và `collector` (thu gom). Nhóm đã bỏ vai trò `dispatcher` (19/11): mọi quyền điều phối thuộc về admin. Web dành cho admin, app mobile dành cho collector. Backend lấy vai trò và user từ token, **không** tin `role`/`worker_id` trong body.
 - Thời gian: ISO-8601 UTC có `Z` (`2026-10-16T08:00:00Z`); frontend tự đổi sang Asia/Ho_Chi_Minh khi hiển thị.
 - Tọa độ: `location = {"type":"Point","coordinates":[lng, lat]}`. Mọi phản hồi có thùng kèm thêm `lat`, `lng` để dùng thẳng với Leaflet.
@@ -47,7 +47,7 @@ Phạm vi: 28 endpoint, lấy theo danh sách trong `smartwastew1.txt` của Dũ
 | 24  | GET    | `/reports/routes`        | admin                                             | Thấp    |
 | 25  | GET    | `/collection-events`     | admin, collector (chỉ của mình)                   | Trung   |
 | 26  | PUT    | `/bins/{id}/photo`       | admin                                             | Trung   |
-| 27  | GET    | `/bins/{id}/photo`       | admin, collector                                  | Trung   |
+| 27  | GET    | `/bins/{id}/photo`       | link có chữ ký trong `photo_url` (xem mục 3.7b)   | Trung   |
 | 28  | DELETE | `/bins/{id}/photo`       | admin                                             | Trung   |
 
 Làm theo thứ tự ưu tiên: các endpoint "Cao" có trước để Dũng dựng UI.
@@ -86,6 +86,7 @@ Query: `ward_code`, `waste_type` (`general|organic|recyclable|hazardous|other`),
       "location": { "type": "Point", "coordinates": [105.8442, 21.005] },
       "lat": 21.005,
       "lng": 105.8442,
+      "photo_url": "/api/v1/bins/WB-001/photo?v=6740c1e2a9&exp=1795000000&sig=3f9a…",
       "state": {
         "device_id": "bin-001",
         "fill_pct": 86.5,
@@ -111,7 +112,7 @@ Query: `ward_code`, `waste_type` (`general|organic|recyclable|hazardous|other`),
 
 ### 3.3 `GET /bins/{id}`
 
-Trả như một phần tử của `/bins`, thêm `notes`, `device` (`{id, lifecycle, enabled}` hoặc null) và `open_alerts` (cảnh báo còn hiệu lực của thùng: cả `open` lẫn `acknowledged`, mới nhất trước; gồm cảnh báo đầy và lỗi cảm biến) và `has_photo` (`true` nếu thùng có ảnh vị trí, xem mục 3.7b). 404 nếu không tồn tại.
+Trả như một phần tử của `/bins`, thêm `notes`, `device` (`{id, lifecycle, enabled}` hoặc null) và `open_alerts` (cảnh báo còn hiệu lực của thùng: cả `open` lẫn `acknowledged`, mới nhất trước; gồm cảnh báo đầy và lỗi cảm biến). 404 nếu không tồn tại.
 
 ### 3.4 `GET /bins/{id}/telemetry`
 
@@ -143,15 +144,16 @@ Sửa một phần: `name`, `address`, `ward_code`, `waste_type`, `location`, `c
 Admin chụp chỗ đặt thùng để collector ra đến nơi nhận ra đúng thùng (tọa độ GPS lệch vài mét). Mỗi thùng **một ảnh**, ảnh mới thay ảnh cũ.
 
 - **Tạo thùng có ảnh** gồm 2 bước: `POST /bins` (JSON như mục 3.6), thành công thì gọi `PUT /bins/{id}/photo` nếu admin có chọn ảnh. Sửa thùng thì gọi lại `PUT` để đổi ảnh.
-- `PUT` (admin): body `multipart/form-data`, field tên `photo`. Nhận JPEG, PNG, WebP, tối đa **2 MB**; backend kiểm tra nội dung file, không dựa vào đuôi tên. Trả `{"bin_id","content_type","size_bytes"}`. Lỗi: không phải ảnh hoặc thiếu field `photo` → 422; quá 2 MB → 413 `TOO_LARGE`; thùng không tồn tại → 404.
-- `GET` (admin, collector): trả **file ảnh** (`image/jpeg|png|webp`), không phải JSON. 404 nếu thùng chưa có ảnh; nên xem `has_photo` của `GET /bins/{id}` trước khi gọi.
+- `PUT` (admin): body `multipart/form-data`, field tên `photo`. Nhận JPEG, PNG, WebP, tối đa **2 MB**; backend kiểm tra nội dung file, không dựa vào đuôi tên. Trả `{"bin_id","content_type","size_bytes","photo_url"}`. Lỗi: không phải ảnh hoặc thiếu field `photo` → 422; quá 2 MB → 413 `TOO_LARGE`; thùng không tồn tại → 404.
+- **`photo_url`**: mọi phản hồi có thùng (`GET /bins`, `GET /bins/{id}`, `POST`/`PATCH /bins`) có trường này. Là link tương đối có chữ ký, **dùng thẳng trong `<img src>`, không cần token**; `null` khi thùng chưa có ảnh. Link sống 6–12 giờ, nên luôn lấy `photo_url` mới từ API, không lưu lâu. Đổi ảnh thì link đổi theo, nên trình duyệt không hiện ảnh cũ từ cache.
+- `GET /bins/{id}/photo?v=…&exp=…&sig=…`: chính là link trong `photo_url`, frontend không tự ghép. Trả **file ảnh** (`image/jpeg|png|webp`), không phải JSON. Chữ ký sai hoặc hết hạn → 403; ảnh đã bị thay hoặc xóa → 404.
 - `DELETE` (admin): 204; 404 nếu chưa có ảnh.
 
 Gợi ý frontend:
 
 - Ô chọn ảnh: `<input type="file" accept="image/jpeg,image/png,image/webp">`; trên điện thoại ô này cho chọn chụp bằng camera. Ảnh điện thoại thường lớn hơn 2 MB: nên thu nhỏ trước khi gửi (vẽ lên `<canvas>` cạnh dài ~1600 px rồi `canvas.toBlob(cb, "image/jpeg", 0.8)`).
 - Gửi: `const fd = new FormData(); fd.append("photo", file); fetch(url, {method: "PUT", headers: {Authorization}, body: fd})`. **Không** tự đặt header `Content-Type`, trình duyệt tự thêm `boundary`.
-- Hiển thị: thẻ `<img src>` không gửi được token, nên `fetch` kèm `Authorization`, rồi `img.src = URL.createObjectURL(await res.blob())`.
+- Hiển thị: `<img src={bin.photo_url ?? ảnhMặcĐịnh}>`. Mobile PWA (`MobileBinDetail`, `MobileMap`) đã đọc sẵn `photo_url` nên không phải sửa. Sau khi `PUT` thành công, dùng `photo_url` trong phản hồi để hiện ngay ảnh mới.
 
 ### 3.8 `POST /devices` (201)
 

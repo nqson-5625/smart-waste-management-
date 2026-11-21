@@ -112,4 +112,5 @@ class BinOut(BaseModel):
     location: GeoPoint | None
     lat: float | None
     lng: float | None
+    photo_url: str | None  # signed link for <img src>; null when the bin has no photo
     state: StateOut | None
