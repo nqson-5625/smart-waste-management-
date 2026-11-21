@@ -17,6 +17,7 @@ router = APIRouter(prefix="/stats", tags=["stats"])
 def waste_by_type(
     from_: datetime = Query(alias="from"),
     to: datetime = Query(),
-    user=Depends(require_roles("admin", "dispatcher")),
+    user=Depends(require_roles("admin", "collector")),
 ):
+    """Collectors read it too: the mobile app shows statistics by waste type."""
     return stats_service.waste_by_type(naive_utc(from_), naive_utc(to))

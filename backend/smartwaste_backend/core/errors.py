@@ -9,6 +9,7 @@ CODES = {
     403: "FORBIDDEN",
     404: "NOT_FOUND",
     409: "CONFLICT",
+    413: "TOO_LARGE",
     422: "VALIDATION",
     503: "UNAVAILABLE",
 }

@@ -34,12 +34,12 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 # nạp .env vào biến môi trường của terminal hiện tại
 Get-Content ..\.env | Where-Object { $_ -match '^[A-Z_]+=' } | ForEach-Object { $k,$v = $_ -split '=',2; Set-Item "env:$k" $v }
-.\.venv\Scripts\python.exe -m smartwaste_backend.scripts.seed_users   # tạo admin/dispatcher/collector một lần
+.\.venv\Scripts\python.exe -m smartwaste_backend.scripts.seed_users   # tạo admin/collector một lần
 .\.venv\Scripts\python.exe -m smartwaste_backend.jobs.projection_worker   # worker (terminal riêng)
 .\.venv\Scripts\python.exe -m uvicorn smartwaste_backend.app:app --port 8000 --reload
 ```
 
-Tài khoản demo: `admin@smartwaste.local`, `dispatcher@smartwaste.local`, `collector@smartwaste.local`, mật khẩu là `DEMO_PASSWORD`. Tài liệu API tự sinh: http://localhost:8000/docs.
+Tài khoản demo: `admin@smartwaste.local` (web), `collector@smartwaste.local` (mobile), mật khẩu là `DEMO_PASSWORD`. Tài liệu API tự sinh: http://localhost:8000/docs.
 
 ## Kiểm thử
 
@@ -77,9 +77,12 @@ smartwaste_backend/
 | `core/common.py` | Thời gian ISO, cursor phân trang, tính `fresh` |
 | `api/auth_router.py` + `services/auth_service.py` | `POST /auth/login`, `GET /auth/me`, `POST /auth/change-password` |
 | `api/bins_router.py` + `services/bins_service.py` | `GET /bins`, `/bins/{id}`, `/bins/{id}/telemetry`, `POST /bins`, `PATCH /bins/{id}` |
+| `api/bin_photos_router.py` + `services/bin_photos_service.py` | `PUT`/`GET`/`DELETE /bins/{id}/photo`: ảnh vị trí thùng, lưu trong GridFS bucket `bin_photos`; bin trả `photo_url` là link có chữ ký (HMAC bằng `JWT_SECRET`) mở được trong `<img src>` |
 | `api/devices_router.py` + `services/devices_service.py` | `POST /devices`, `POST /devices/{id}/configs`, `POST /bins/{id}/assignments` |
 | `api/alerts_router.py` + `services/alerts_service.py` | `GET /alerts`, `POST /alerts/{id}/ack` |
 | `api/stats_router.py` + `services/stats_service.py` | `GET /stats/waste-by-type` |
+| `api/users_router.py` + `services/users_service.py` | `POST /users`, `PATCH /users/{id}`, `GET /users` (admin quản lý tài khoản) |
+| `api/collection_events_router.py` + `services/collection_events_service.py` | `POST /collection-events` (có `Idempotency-Key`), `GET /collection-events` |
 | `services/audit_service.py` | Ghi `audit_logs` cho thao tác của người dùng (ai, làm gì, request nào) |
 | `services/telemetry_service.py` | Truy vấn lịch sử đo theo `(bin_id, sampled_at, _id)` |
 | `services/projection_service.py` | Quy tắc tính `bin_state` và mở/đóng cảnh báo từ một bản telemetry; `requeue_blocked` đưa bản tin bị chặn về hàng đợi khi có hiệu chuẩn |

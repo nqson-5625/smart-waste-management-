@@ -19,12 +19,12 @@ def test_health(client, db):
 
 
 def test_login_then_me(client, make_user, login):
-    email = make_user("usr-a", ["dispatcher"])
+    email = make_user("usr-a", ["collector"])
     response = login(email.upper())  # email is case-insensitive
     assert response.status_code == 200
     body = response.json()
     assert body["token_type"] == "bearer" and body["expires_in"] == 8 * 3600
-    assert body["user"] == {"id": "usr-a", "display_name": "usr-a", "roles": ["dispatcher"]}
+    assert body["user"] == {"id": "usr-a", "display_name": "usr-a", "roles": ["collector"]}
 
     me = client.get("/api/v1/auth/me", headers=bearer(body["access_token"]))
     assert me.json() == body["user"]

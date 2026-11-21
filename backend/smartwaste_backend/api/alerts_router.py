@@ -13,7 +13,7 @@ router = APIRouter(prefix="/alerts", tags=["alerts"])
 
 AlertType = Literal["full", "sensor_fault", "device_stale", "gateway_offline"]
 ScopeType = Literal["bin", "device", "gateway"]
-any_user = require_roles("admin", "dispatcher", "collector")
+any_user = require_roles("admin", "collector")
 
 
 @router.get("")

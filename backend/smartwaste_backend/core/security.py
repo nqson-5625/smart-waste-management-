@@ -1,5 +1,7 @@
 """Password hashing, JWT access tokens and role-check dependencies."""
 
+import hashlib
+import hmac
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
@@ -38,6 +40,15 @@ def issue_token(user_id):
     now = datetime.now(timezone.utc)
     claims = {"sub": user_id, "iat": now, "exp": now + TOKEN_TTL}
     return jwt.encode(claims, _secret(), algorithm=ALGORITHM)
+
+
+def sign(message):
+    """HMAC tag for links that must open without a bearer token, such as ``<img src>``."""
+    return hmac.new(_secret().encode(), f"link:{message}".encode(), hashlib.sha256).hexdigest()
+
+
+def signature_ok(message, tag):
+    return hmac.compare_digest(tag.encode(), sign(message).encode())
 
 
 def current_user(request: Request):

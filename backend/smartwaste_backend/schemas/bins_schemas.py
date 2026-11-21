@@ -50,6 +50,13 @@ class BinCreate(_BinFields):
     capacity_l: float | None = Field(None, ge=1, le=100000)
     notes: str | None = Field(None, min_length=1, max_length=1000)
 
+    @model_validator(mode="after")
+    def field_bin_has_location(self):
+        # Field bins go on the map and into routes; a bin without coordinates breaks both.
+        if self.location is None:
+            raise ValueError("thùng phải có tọa độ (location hoặc lat/lng)")
+        return self
+
 
 class BinUpdate(_BinFields):
     """Partial update: only fields present in the request are changed."""
@@ -62,7 +69,8 @@ class BinUpdate(_BinFields):
     status: BinStatus | None = None
     notes: str | None = Field(None, min_length=1, max_length=1000)
 
-    NOT_NULL: ClassVar[tuple[str, ...]] = ("name", "address", "ward_code", "waste_type", "status")
+    NOT_NULL: ClassVar[tuple[str, ...]] = ("name", "address", "ward_code", "waste_type", "status",
+                                           "location")
 
     @model_validator(mode="after")
     def required_fields_not_null(self):
@@ -104,4 +112,5 @@ class BinOut(BaseModel):
     location: GeoPoint | None
     lat: float | None
     lng: float | None
+    photo_url: str | None  # signed link for <img src>; null when the bin has no photo
     state: StateOut | None

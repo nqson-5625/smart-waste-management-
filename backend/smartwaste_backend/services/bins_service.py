@@ -8,7 +8,7 @@ from ..core.common import (
 )
 from ..core.db import get_database
 from ..core.errors import ApiError
-from . import alerts_service, audit_service
+from . import alerts_service, audit_service, bin_photos_service
 from .telemetry_service import list_telemetry
 
 
@@ -51,11 +51,13 @@ def bin_view(doc, now):
     lng, lat = location["coordinates"] if location else (None, None)
     collections = doc.get("last_collection") or [{}]
     state = (doc.get("state") or [None])[0]
+    photo = (doc.get("photo") or [{}])[0]
     return {
         "id": doc["_id"], "code": doc["code"], "name": doc["name"], "address": doc["address"],
         "ward_code": doc["ward_code"], "waste_type": doc["waste_type"],
         "capacity_l": doc["capacity_l"], "status": doc["status"], "location": location,
         "lat": lat, "lng": lng,
+        "photo_url": bin_photos_service.photo_url(doc["_id"], photo.get("_id")),
         "state": state_view(state, collections[0].get("completed_at"), now),
     }
 
@@ -87,7 +89,7 @@ def list_bins(ward_code, waste_type, status, full, fresh, limit, cursor):
     pipeline = [{"$match": match}, {"$sort": {"_id": 1}}, JOIN_STATE]
     if state_match:
         pipeline.append({"$match": state_match})
-    pipeline += [{"$limit": limit + 1}, LAST_COLLECTION]
+    pipeline += [{"$limit": limit + 1}, LAST_COLLECTION, bin_photos_service.JOIN_PHOTO]
 
     docs = list(get_database().bins.aggregate(pipeline))
     has_more = len(docs) > limit
@@ -101,7 +103,7 @@ def list_bins(ward_code, waste_type, status, full, fresh, limit, cursor):
 def _load(bin_id):
     """One bin joined with its state and last collection, or 404."""
     docs = list(get_database().bins.aggregate([{"$match": {"_id": bin_id}}, JOIN_STATE,
-                                               LAST_COLLECTION]))
+                                               LAST_COLLECTION, bin_photos_service.JOIN_PHOTO]))
     if not docs:
         raise ApiError(404, "Không tìm thấy thùng", {"bin_id": bin_id})
     return docs[0]
