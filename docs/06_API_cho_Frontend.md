@@ -2,7 +2,7 @@
 
 **Người viết:** Đỗ Thanh Sơn (Backend) · **Người đọc:** Dũng (Web/App) · **Trạng thái:** đề xuất để chốt, **chưa có server chạy**.
 
-Phạm vi: 28 endpoint, lấy theo danh sách trong `smartwastew1.txt` của Dũng (web và mobile) cộng nhóm quản lý người dùng và ảnh vị trí thùng (nhóm thêm 21/11). Phủ các yêu cầu chức năng của đề bài: quản lý thùng, bản đồ, cảnh báo, thống kê theo loại, lập và giao tuyến, xác nhận thu gom, quản lý người dùng. Backend chỉ đọc/ghi dữ liệu nghiệp vụ; dữ liệu cảm biến vào MongoDB qua `iot-ingestion` (xem `03_Backend_contract.md`).
+Phạm vi: 27 endpoint, lấy theo danh sách trong `smartwastew1.txt` của Dũng (web và mobile) cộng nhóm quản lý người dùng và ảnh vị trí thùng (nhóm thêm 21/11). Phủ các yêu cầu chức năng của đề bài: quản lý thùng, bản đồ, cảnh báo, thống kê theo loại, lập và giao tuyến, xác nhận thu gom, quản lý người dùng. Backend chỉ đọc/ghi dữ liệu nghiệp vụ; dữ liệu cảm biến vào MongoDB qua `iot-ingestion` (xem `03_Backend_contract.md`).
 
 ## 1. Quy ước chung
 
@@ -33,7 +33,7 @@ Phạm vi: 28 endpoint, lấy theo danh sách trong `smartwastew1.txt` của Dũ
 | 10  | POST   | `/bins/{id}/assignments` | admin                                             | Trung   |
 | 11  | POST   | `/collection-events`     | collector, admin                                  | Trung   |
 | 12  | GET    | `/stats/waste-by-type`   | admin, collector                                  | Trung   |
-| 13  | POST   | `/routes/suggest`        | admin                                             | Thấp    |
+| 13  | POST   | `/routes/generate`       | admin                                             | Trung   |
 | 14  | GET    | `/auth/me`               | mọi user đã đăng nhập                             | Cao     |
 | 15  | POST   | `/alerts/{id}/ack`       | admin, collector                                  | Cao     |
 | 16  | POST   | `/users`                 | admin                                             | Trung   |
@@ -41,16 +41,17 @@ Phạm vi: 28 endpoint, lấy theo danh sách trong `smartwastew1.txt` của Dũ
 | 18  | GET    | `/users`                 | admin                                             | Trung   |
 | 19  | POST   | `/auth/change-password`  | mọi user đã đăng nhập                             | Thấp    |
 | 20  | POST   | `/devices/{id}/configs`  | admin                                             | Trung   |
-| 21  | POST   | `/routes`                | admin                                             | Thấp    |
-| 22  | GET    | `/routes`                | admin, collector (chỉ tuyến của mình)             | Thấp    |
-| 23  | PATCH  | `/routes/{id}/status`    | xem mục 3.14                                      | Thấp    |
-| 24  | GET    | `/reports/routes`        | admin                                             | Thấp    |
+| 22  | GET    | `/routes`                | admin, collector (chỉ tuyến của mình)             | Trung   |
+| 23  | PATCH  | `/routes/{id}/status`    | xem mục 3.14                                      | Trung   |
+| 24  | GET    | `/reports/routes`        | admin                                             | Trung   |
 | 25  | GET    | `/collection-events`     | admin, collector (chỉ của mình)                   | Trung   |
 | 26  | PUT    | `/bins/{id}/photo`       | admin                                             | Trung   |
 | 27  | GET    | `/bins/{id}/photo`       | link có chữ ký trong `photo_url` (xem mục 3.7b)   | Trung   |
 | 28  | DELETE | `/bins/{id}/photo`       | admin                                             | Trung   |
 
 Làm theo thứ tự ưu tiên: các endpoint "Cao" có trước để Dũng dựng UI.
+
+Ngày 22/11, theo đề xuất tuyến tuần 9 (phương án B, tuyến tự động theo ca): `POST /routes/suggest` (#13 cũ) và `POST /routes` (#21 cũ) được thay bằng một endpoint `POST /routes/generate`, vì tuyến do hệ thống tự lập và giao, admin không còn bước gợi ý rồi lưu tay. Tổng còn 27 endpoint.
 
 ## 3. Chi tiết
 
@@ -197,32 +198,39 @@ Quyền: admin, collector (app mobile có màn thống kê). Query: `from`, `to`
 - `avg_fill_pct`: mức đầy trung bình của các mẫu đo **tốt** trong khoảng thời gian; `null` nếu không có mẫu.
 - `collection_count`, `known_weight_*`, `unknown_weight_count`: từ các lượt thu gom đã xác nhận trong khoảng. Không có cân thì chỉ có số lượt; `known_weight_kg` chỉ cộng các lượt có cân, `null` nếu không lượt nào có cân. Không suy kg từ `fill_pct`.
 
-### 3.12 `POST /routes/suggest`
+### 3.12 Lập tuyến tự động theo ca và `POST /routes/generate`
 
-Gợi ý thứ tự ghé các thùng cần thu gom (nearest neighbor, khoảng cách đường chim bay, **không** phải đường phố thật). Body:
-`{"depot":{"lng":105.84,"lat":21.00},"min_fill_pct":80,"max_stops_per_trip":20}`
-(`min_fill_pct` mặc định 80; chỉ lấy thùng `fresh` và active). Trả:
+Tuyến do hệ thống tự lập và tự giao; admin chỉ xử lý ngoại lệ (đề xuất tuần 9, phương án B).
 
-```json
-{
-  "stops": [
-    {
-      "order": 1,
-      "bin_id": "WB-001",
-      "lat": 21.005,
-      "lng": 105.844,
-      "fill_pct": 86.5
-    }
-  ],
-  "planned_distance_m": 4200,
-  "baseline_distance_m": 18600,
-  "distance_reduction_pct": 77.4,
-  "planned_trips": 1,
-  "baseline_trips": 3
-}
-```
+**Mỗi ca** (giờ trong `ROUTE_SHIFT_TIMES`, mặc định `06:00,14:00` giờ Việt Nam), worker nền:
 
-`baseline` là phương án đi hết mọi thùng active theo thứ tự cố định, cùng cách tính khoảng cách. Đây là phép so sánh mô phỏng để đo chỉ tiêu km và số chuyến giảm được; không phải quãng đường xe thực chạy.
+1. Hủy các tuyến của ca trước chưa ai bắt đầu (`planned`, `assigned`), để thùng của chúng được lập lại.
+2. Chọn thùng cần thu gom. Thùng phải là thùng `field`, `active`, có tọa độ, đang gắn thiết bị, có số đo tốt còn mới (`fresh`) và `latest_quality = ok`. Thêm một trong ba điều kiện:
+   - cảm biến báo đầy (`alarm_active = true`);
+   - hoặc `fill_pct >= 80`;
+   - hoặc dự báo sẽ tràn trước ca sau: `fill_pct + 1,3 × tốc độ đầy × số giờ tới ca sau >= 100`. Tốc độ đầy tính từ các mẫu tốt trong 48 giờ gần nhất, sau lần thu gom gần nhất; cần ít nhất 2 mẫu.
+
+   Thùng bị loại nếu đang nằm trong một tuyến chưa xong, hoặc đã có lượt thu gom mới hơn số đo gần nhất (đã đổ, chờ cảm biến báo lại).
+3. Lấy các collector `active` chưa cầm tuyến nào (`assigned` hoặc `in_progress`), sắp theo id.
+4. Chia thùng theo góc quanh bãi tập kết (sweep), mỗi collector một vùng. Trong mỗi vùng, sắp thứ tự bằng láng giềng gần nhất rồi 2-opt. Không có collector nào thì vẫn tạo **một** tuyến `planned` để admin giao tay.
+5. Lưu tuyến `assigned` (hoặc `planned`), `created_by = "system:route-worker"`.
+
+Mỗi ca chỉ chạy một lần. Worker tắt lúc 06:00 rồi bật lại lúc 10:00 thì vẫn chạy ca 06:00; bật lại sau 14:00 thì chỉ chạy ca 14:00.
+
+**`POST /routes/generate`** (admin, không cần body) là nút **"Tạo tuyến ngay"**: chạy đúng thuật toán trên ngay lúc bấm, nhưng không hủy tuyến nào, chỉ lấy thùng chưa nằm trong tuyến. Dùng khi có thùng đầy gấp giữa ca, hoặc khi demo. Trả `{"items":[...]}` gồm các tuyến vừa tạo (dạng như `GET /routes`); `items` rỗng nghĩa là không có thùng nào cần thu.
+
+**Khoảng cách** là đường chim bay (haversine), **không** phải đường phố thật. Một tuyến gồm một hoặc nhiều **chuyến**, mỗi chuyến tối đa `ROUTE_MAX_STOPS` điểm (mặc định 20), đi từ bãi tập kết và quay về. `planned_distance_m` cộng mọi chuyến.
+
+**Baseline** là lịch cố định: đi hết mọi thùng `active` có tọa độ theo thứ tự mã thùng, cùng cách tính khoảng cách và cùng số điểm mỗi chuyến. Baseline tính cho **cả ngày**, nên mọi tuyến cùng ngày mang cùng một `baseline_distance_m`, và báo cáo chỉ lấy một lần mỗi ngày (mục 3.15). Đây là phép so sánh mô phỏng để đo chỉ tiêu km và số chuyến giảm được, không phải quãng đường xe thực chạy.
+
+Cấu hình (biến môi trường của `api` và `worker`, có giá trị mặc định nên không bắt buộc đặt):
+
+| Biến | Mặc định | Ý nghĩa |
+|---|---|---|
+| `DEPOT_LAT`, `DEPOT_LNG` | `21.0047`, `105.8431` (cổng Parabol, ĐHBK) | Bãi tập kết, điểm xuất phát và kết thúc mỗi chuyến |
+| `ROUTE_SHIFT_TIMES` | `06:00,14:00` | Giờ chạy ca, giờ Việt Nam |
+| `ROUTE_MAX_STOPS` | `20` | Số điểm tối đa một chuyến |
+| `ROUTE_FORECAST` | `true` | Bật dự báo tràn |
 
 ### 3.13 Quản lý người dùng (chỉ admin)
 
@@ -234,27 +242,57 @@ Dùng để admin tạo tài khoản cho nhân viên thu gom và cho admin khác
 
 ### 3.14 Tuyến thu gom
 
-- `POST /routes` (201, admin): body `{"service_date":"2026-10-20","assigned_worker_id":"<id collector>|null","depot":{"lng","lat"},"bin_ids":["WB-001","WB-007"]}`. `bin_ids` theo đúng thứ tự ghé (thường lấy từ kết quả `POST /routes/suggest`), 1 đến 200 thùng, không lặp. Backend chụp lại tọa độ và mức đầy từng thùng tại lúc lập tuyến, tính `planned_distance_m` và `baseline_distance_m` cùng cách với `/routes/suggest`. Có `assigned_worker_id` thì `status = assigned`, không thì `planned`.
-- `GET /routes`: query `service_date`, `status`, `assigned_worker_id`, `limit`, `cursor`. Collector chỉ thấy tuyến được giao cho mình (Backend tự lọc). Phần tử: `{"id","service_date","status","assigned_worker_id","depot","stops":[{"stop_order","bin_id","lat","lng","planned_fill_pct","status":"pending|collected|skipped","completed_at","skip_reason"}],"planned_distance_m","baseline_distance_m","actual_distance_m","started_at","completed_at"}`.
+Tuyến được tạo tự động (mục 3.12); không có endpoint tạo tuyến bằng tay.
+
+- `GET /routes` (admin, collector): query `service_date` (`YYYY-MM-DD`), `status`, `assigned_worker_id`, `limit`, `cursor`. Sắp **mới nhất trước**. Collector chỉ thấy tuyến được giao cho mình (backend tự lọc, bỏ qua `assigned_worker_id` gửi lên). Phần tử:
+
+```json
+{
+  "id": "rt-20261122-0600-1",
+  "service_date": "2026-11-22",
+  "status": "assigned",
+  "assigned_worker_id": "usr-3f2a9c1b7e40",
+  "assigned_worker_name": "Nguyễn Văn A",
+  "depot": { "lat": 21.0047, "lng": 105.8431 },
+  "stops": [
+    {
+      "stop_order": 1, "bin_id": "WB-007", "lat": 21.006, "lng": 105.845,
+      "planned_fill_pct": 86.5, "status": "pending", "completed_at": null,
+      "collection_event_id": null, "skip_reason": null
+    }
+  ],
+  "stop_count": 8, "collected_count": 0, "trip_count": 1,
+  "planned_distance_m": 4200, "baseline_distance_m": 18600,
+  "actual_distance_m": null, "actual_distance_source": null,
+  "started_at": null, "completed_at": null,
+  "created_by": "system:route-worker", "created_at": "2026-11-21T23:00:02Z"
+}
+```
+
+  Điểm dừng đã sắp sẵn theo thứ tự ghé (`stop_order` 1, 2, 3...); mobile nối `depot` → các điểm theo `stop_order` → `depot` để vẽ tuyến. `lat`/`lng` của điểm là tọa độ chụp lúc lập tuyến. `trip_count` là số chuyến (mỗi chuyến tối đa `ROUTE_MAX_STOPS` điểm, về bãi đổ giữa các chuyến).
+- **Thu gom một điểm** trên tuyến: `POST /collection-events` kèm `route_id` và `stop_order` (mục 3.10). Tuyến phải đang `in_progress`; điểm chuyển `collected`.
 - `PATCH /routes/{id}/status`: body `{"status", ...}`. Chuyển trạng thái hợp lệ:
 
 | Từ → sang                              | Ai được làm         | Body thêm                                                                                         |
 | -------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------- |
-| `planned` → `assigned`                 | admin               | `assigned_worker_id`                                                                              |
+| `planned` → `assigned`                 | admin               | `assigned_worker_id` (collector đang `active`, sai thì 422)                                       |
+| `assigned` → `assigned` (**giao lại**) | admin               | `assigned_worker_id` mới; chỉ khi tuyến chưa bắt đầu (collector nghỉ đột xuất)                    |
 | `assigned` → `in_progress`             | collector được giao |                                                                                                   |
 | `in_progress` → `completed`            | collector được giao | `actual_distance_m?`, `actual_distance_source?` (`odometer`, `gps` hoặc `manual`), `skip_reason?` |
 | bất kỳ trước `completed` → `cancelled` | admin               |                                                                                                   |
 
-Khi `completed`, các điểm dừng còn `pending` chuyển `skipped` với `skip_reason` (bắt buộc nếu còn điểm `pending`). Chuyển sai trả 409.
+Khi `completed`, các điểm dừng còn `pending` chuyển `skipped` với `skip_reason` (bắt buộc nếu còn điểm `pending`, thiếu thì 422). `actual_distance_m` và `actual_distance_source` gửi cùng nhau hoặc không gửi. Người không đúng vai trò hoặc không phải người được giao trả 403; chuyển trạng thái sai trả 409; không có tuyến trả 404. Trả tuyến sau khi đổi. Tuyến bị hủy trả thùng của nó về cho lần lập tuyến sau.
 
 ### 3.15 `GET /reports/routes`
 
-Query `from`, `to` (ngày `YYYY-MM-DD`, giờ Việt Nam). Trả `{"items":[...],"summary":{...}}`:
+Admin. Query `from`, `to` (ngày `YYYY-MM-DD`, giờ Việt Nam; `from <= to`). Chỉ tính tuyến `completed`. Trả `{"items":[...],"summary":{...}}`:
 
-- Mỗi tuyến đã `completed`: `{"route_id","service_date","stop_count","collected_count","planned_distance_m","baseline_distance_m","actual_distance_m","planned_reduction_pct","actual_reduction_pct"}`.
-- `summary`: tổng số tuyến và tổng ba loại quãng đường, cùng hai tỷ lệ giảm.
+- Mỗi **ngày** có tuyến hoàn thành: `{"service_date","route_count","stop_count","collected_count","planned_distance_m","actual_distance_m","baseline_distance_m","planned_trips","baseline_trips","planned_reduction_pct","actual_reduction_pct","trip_reduction_pct"}`.
+- `summary`: `day_count`, `route_count` và tổng các cột quãng đường, số chuyến, cùng ba tỷ lệ giảm trên cả khoảng.
 
-`planned_reduction_pct = (baseline - planned) / baseline × 100` là mức giảm theo mô phỏng. `actual_reduction_pct` chỉ có khi tuyến có `actual_distance_m`, nếu không là `null`. Không lấy planned thay cho actual.
+Tính theo ngày vì baseline là lịch cố định của cả ngày (mục 3.12): `planned` và `actual` cộng mọi tuyến trong ngày (2 ca), `baseline` lấy một lần.
+
+`planned_reduction_pct = (baseline - planned) / baseline × 100` là mức giảm theo mô phỏng. `actual_distance_m` chỉ có khi **mọi** tuyến trong ngày đã nhập km thực tế, nếu không là `null` và `actual_reduction_pct` cũng `null`. Không lấy planned thay cho actual. `trip_reduction_pct` so số chuyến kế hoạch với số chuyến của lịch cố định.
 
 ### 3.16 `POST /devices/{id}/configs` (201)
 

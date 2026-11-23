@@ -14,7 +14,7 @@ from ..core.common import (
 )
 from ..core.db import get_database, run_transaction
 from ..core.errors import ApiError
-from . import audit_service
+from . import audit_service, users_service
 
 
 def event_view(event, worker_name):
@@ -27,11 +27,6 @@ def event_view(event, worker_name):
         "fill_before_pct": event["fill_before_pct"], "fill_after_pct": event["fill_after_pct"],
         "note": event["note"],
     }
-
-
-def _names(database, worker_ids):
-    users = database.users.find({"_id": {"$in": list(worker_ids)}}, {"display_name": 1})
-    return {user["_id"]: user["display_name"] for user in users}
 
 
 def request_hash(body, worker_id):
@@ -47,7 +42,8 @@ def _replay(database, event, digest):
     if event["request_hash"] != digest:
         raise ApiError(409, "Idempotency-Key đã được dùng cho một yêu cầu khác",
                        {"event_id": event["_id"]})
-    return event_view(event, _names(database, [event["worker_id"]]).get(event["worker_id"]))
+    names = users_service.display_names(database, [event["worker_id"]])
+    return event_view(event, names.get(event["worker_id"]))
 
 
 def _collect_stop(database, session, body, user, completed_at, event_id, now):
@@ -154,7 +150,7 @@ def list_events(viewer, bin_id, worker_id, route_id, start, end, limit, cursor):
                   .sort([("completed_at", -1), ("_id", 1)]).limit(limit + 1))
     has_more = len(events) > limit
     events = events[:limit]
-    names = _names(database, {event["worker_id"] for event in events})
+    names = users_service.display_names(database, {event["worker_id"] for event in events})
     return {
         "items": [event_view(event, names.get(event["worker_id"])) for event in events],
         "next_cursor": (encode_cursor([to_ms(events[-1]["completed_at"]), events[-1]["_id"]])

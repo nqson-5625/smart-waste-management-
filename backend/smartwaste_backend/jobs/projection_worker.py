@@ -6,6 +6,8 @@ Each loop claims one pending telemetry document with a 60-second lease, then
 applies it inside a single snapshot transaction that re-checks the lease, so
 several workers can run without double-processing. Failures retry with
 exponential backoff and become blocked after MAX_ATTEMPTS.
+
+Once a minute the loop also runs route_worker, which builds routes at each shift start.
 """
 
 import logging
@@ -20,11 +22,13 @@ from pymongo.write_concern import WriteConcern
 
 from ..core.db import get_database
 from ..services import projection_service
+from . import route_worker
 
 
 LEASE = timedelta(seconds=60)
 MAX_ATTEMPTS = 10
 IDLE_SLEEP_S = 1.0
+SHIFT_CHECK_S = 60  # the same process also runs the route shift job (route_worker)
 WORKER_ID = os.environ.get("WORKER_ID") or f"worker-{socket.gethostname()}-{os.getpid()}"
 
 log = logging.getLogger("smartwaste.worker")
@@ -91,7 +95,14 @@ def process_one(database=None):
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     log.info("Worker %s started", WORKER_ID)
+    next_shift_check = 0.0
     while True:
+        if time.monotonic() >= next_shift_check:
+            next_shift_check = time.monotonic() + SHIFT_CHECK_S
+            try:
+                route_worker.run_due_shift()
+            except Exception:  # a routing failure must not stop telemetry processing
+                log.exception("Route shift job failed; retrying in %d s", SHIFT_CHECK_S)
         if process_one() is None:
             time.sleep(IDLE_SLEEP_S)
 
