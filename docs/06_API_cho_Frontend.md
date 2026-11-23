@@ -2,7 +2,7 @@
 
 **Người viết:** Đỗ Thanh Sơn (Backend) · **Người đọc:** Dũng (Web/App) · **Trạng thái:** đề xuất để chốt, **chưa có server chạy**.
 
-Phạm vi: 27 endpoint, lấy theo danh sách trong `smartwastew1.txt` của Dũng (web và mobile) cộng nhóm quản lý người dùng và ảnh vị trí thùng (nhóm thêm 21/11). Phủ các yêu cầu chức năng của đề bài: quản lý thùng, bản đồ, cảnh báo, thống kê theo loại, lập và giao tuyến, xác nhận thu gom, quản lý người dùng. Backend chỉ đọc/ghi dữ liệu nghiệp vụ; dữ liệu cảm biến vào MongoDB qua `iot-ingestion` (xem `03_Backend_contract.md`).
+Phạm vi: 28 endpoint, lấy theo danh sách trong `smartwastew1.txt` của Dũng (web và mobile) cộng nhóm quản lý người dùng và ảnh vị trí thùng (nhóm thêm 21/11). Phủ các yêu cầu chức năng của đề bài: quản lý thùng, bản đồ, cảnh báo, thống kê theo loại, lập và giao tuyến, xác nhận thu gom, quản lý người dùng. Backend chỉ đọc/ghi dữ liệu nghiệp vụ; dữ liệu cảm biến vào MongoDB qua `iot-ingestion` (xem `03_Backend_contract.md`).
 
 ## 1. Quy ước chung
 
@@ -43,6 +43,7 @@ Phạm vi: 27 endpoint, lấy theo danh sách trong `smartwastew1.txt` của Dũ
 | 20  | POST   | `/devices/{id}/configs`  | admin                                             | Trung   |
 | 22  | GET    | `/routes`                | admin, collector (chỉ tuyến của mình)             | Trung   |
 | 23  | PATCH  | `/routes/{id}/status`    | xem mục 3.14                                      | Trung   |
+| 21  | GET    | `/routes/{id}/geometry`  | admin, collector (chỉ tuyến của mình)             | Trung   |
 | 24  | GET    | `/reports/routes`        | admin                                             | Trung   |
 | 25  | GET    | `/collection-events`     | admin, collector (chỉ của mình)                   | Trung   |
 | 26  | PUT    | `/bins/{id}/photo`       | admin                                             | Trung   |
@@ -51,7 +52,7 @@ Phạm vi: 27 endpoint, lấy theo danh sách trong `smartwastew1.txt` của Dũ
 
 Làm theo thứ tự ưu tiên: các endpoint "Cao" có trước để Dũng dựng UI.
 
-Ngày 22/11, theo đề xuất tuyến tuần 9 (phương án B, tuyến tự động theo ca): `POST /routes/suggest` (#13 cũ) và `POST /routes` (#21 cũ) được thay bằng một endpoint `POST /routes/generate`, vì tuyến do hệ thống tự lập và giao, admin không còn bước gợi ý rồi lưu tay. Tổng còn 27 endpoint.
+Ngày 22/11, theo đề xuất tuyến tuần 9 (phương án B, tuyến tự động theo ca): `POST /routes/suggest` (#13 cũ) và `POST /routes` (#21 cũ) được thay bằng một endpoint `POST /routes/generate`, vì tuyến do hệ thống tự lập và giao, admin không còn bước gợi ý rồi lưu tay. Số #21 dùng lại cho `GET /routes/{id}/geometry` (đường đi theo phố để vẽ tuyến, nhóm chốt ngày 23/11 tính tuyến theo đường bộ). Tổng 28 endpoint.
 
 ## 3. Chi tiết
 
@@ -219,9 +220,16 @@ Mỗi ca chỉ chạy một lần. Worker tắt lúc 06:00 rồi bật lại lú
 
 **`POST /routes/generate`** (admin, không cần body) là nút **"Tạo tuyến ngay"**: chạy đúng thuật toán trên ngay lúc bấm, nhưng không hủy tuyến nào, chỉ lấy thùng chưa nằm trong tuyến. Dùng khi có thùng đầy gấp giữa ca, hoặc khi demo. Trả `{"items":[...]}` gồm các tuyến vừa tạo (dạng như `GET /routes`); `items` rỗng nghĩa là không có thùng nào cần thu.
 
-**Khoảng cách** là đường chim bay (haversine), **không** phải đường phố thật. Một tuyến gồm một hoặc nhiều **chuyến**, mỗi chuyến tối đa `ROUTE_MAX_STOPS` điểm (mặc định 20), đi từ bãi tập kết và quay về. `planned_distance_m` cộng mọi chuyến.
+**Khoảng cách** là **km đường bộ cho xe ép rác**, lấy từ OSRM chạy offline trong Docker trên bản đồ OpenStreetMap vùng Hà Nội. Có tính đường một chiều.
 
-**Baseline** là lịch cố định: đi hết mọi thùng `active` có tọa độ theo thứ tự mã thùng, cùng cách tính khoảng cách và cùng số điểm mỗi chuyến. Baseline tính cho **cả ngày**, nên mọi tuyến cùng ngày mang cùng một `baseline_distance_m`, và báo cáo chỉ lấy một lần mỗi ngày (mục 3.15). Đây là phép so sánh mô phỏng để đo chỉ tiêu km và số chuyến giảm được, không phải quãng đường xe thực chạy.
+- Profile xe rác: kích thước xe khoảng 12 tấn (cao 3,5 m, rộng 2,5 m, dài 8 m), tránh đường có biển hạn chế nếu bản đồ có ghi, và **không đi vào ngõ nhỏ hay đường nội bộ**. Thùng nằm trong ngõ thì điểm dừng tính ở đầu ngõ, chỗ xe đỗ để công nhân kéo thùng ra. Chưa tính giờ cấm xe tải nội thành.
+- Mỗi lần lập tuyến, backend lấy một bảng khoảng cách đường bộ giữa bãi tập kết và mọi thùng.
+- Thứ tự ghé tối ưu trên trung bình hai chiều, còn km báo cáo tính đúng theo chiều xe đi.
+- Khi OSRM chưa sẵn sàng (lần đầu đang tải bản đồ, hoặc container tắt), backend tạm dùng **đường chim bay** cho cả lần lập tuyến đó. Tuyến ghi rõ `distance_method`: `road` hoặc `straight`.
+
+Một tuyến gồm một hoặc nhiều **chuyến**, mỗi chuyến tối đa `ROUTE_MAX_STOPS` điểm (mặc định 20), đi từ bãi tập kết và quay về. `planned_distance_m` cộng mọi chuyến.
+
+**Baseline** là lịch cố định: đi hết mọi thùng `active` có tọa độ theo thứ tự mã thùng, **cùng cách tính khoảng cách** (cùng bảng đường bộ, hoặc cùng đường chim bay) và cùng số điểm mỗi chuyến. Baseline tính cho **cả ngày**, nên mọi tuyến cùng ngày mang cùng một `baseline_distance_m`, và báo cáo chỉ lấy một lần mỗi ngày (mục 3.15). Đây là phép so sánh mô phỏng để đo chỉ tiêu km và số chuyến giảm được, không phải quãng đường xe thực chạy.
 
 Cấu hình (biến môi trường của `api` và `worker`, có giá trị mặc định nên không bắt buộc đặt):
 
@@ -231,6 +239,8 @@ Cấu hình (biến môi trường của `api` và `worker`, có giá trị mặ
 | `ROUTE_SHIFT_TIMES` | `06:00,14:00` | Giờ chạy ca, giờ Việt Nam |
 | `ROUTE_MAX_STOPS` | `20` | Số điểm tối đa một chuyến |
 | `ROUTE_FORECAST` | `true` | Bật dự báo tràn |
+| `OSRM_URL` | `http://osrm:5000` trong Docker; để trống là chỉ dùng đường chim bay | Địa chỉ server đường bộ |
+| `OSRM_BBOX` | `105.70,20.90,106.00,21.15` | Khung bản đồ giữ lại (kinh độ min, vĩ độ min, kinh độ max, vĩ độ max). Thùng nằm ngoài khung thì cả lần lập tuyến đó dùng đường chim bay |
 
 ### 3.13 Quản lý người dùng (chỉ admin)
 
@@ -261,7 +271,7 @@ Tuyến được tạo tự động (mục 3.12); không có endpoint tạo tuy�
       "collection_event_id": null, "skip_reason": null
     }
   ],
-  "stop_count": 8, "collected_count": 0, "trip_count": 1,
+  "stop_count": 8, "collected_count": 0, "trip_count": 1, "distance_method": "road",
   "planned_distance_m": 4200, "baseline_distance_m": 18600,
   "actual_distance_m": null, "actual_distance_source": null,
   "started_at": null, "completed_at": null,
@@ -269,7 +279,8 @@ Tuyến được tạo tự động (mục 3.12); không có endpoint tạo tuy�
 }
 ```
 
-  Điểm dừng đã sắp sẵn theo thứ tự ghé (`stop_order` 1, 2, 3...); mobile nối `depot` → các điểm theo `stop_order` → `depot` để vẽ tuyến. `lat`/`lng` của điểm là tọa độ chụp lúc lập tuyến. `trip_count` là số chuyến (mỗi chuyến tối đa `ROUTE_MAX_STOPS` điểm, về bãi đổ giữa các chuyến).
+  Điểm dừng đã sắp sẵn theo thứ tự ghé (`stop_order` 1, 2, 3...). Đánh số trên bản đồ theo `stop_order`; còn **đường đi** thì lấy từ `GET /routes/{id}/geometry` ngay bên dưới. `lat`/`lng` của điểm là tọa độ chụp lúc lập tuyến. `trip_count` là số chuyến (mỗi chuyến tối đa `ROUTE_MAX_STOPS` điểm, về bãi đổ giữa các chuyến).
+- `GET /routes/{id}/geometry` (admin; collector chỉ tuyến của mình, người khác trả 403): đường đi để vẽ lên bản đồ, **bám theo đường phố**: bãi → các điểm → bãi, lặp lại cho từng chuyến. Trả GeoJSON `{"route_id","type":"LineString","source":"road|straight","coordinates":[[lng,lat],...]}`. Vẽ bằng Leaflet: `L.polyline(coordinates.map(([lng, lat]) => [lat, lng]))`. Chú ý GeoJSON để kinh độ trước. `source = "straight"` khi OSRM đang tắt: lúc đó chỉ là các đoạn thẳng nối điểm.
 - **Thu gom một điểm** trên tuyến: `POST /collection-events` kèm `route_id` và `stop_order` (mục 3.10). Tuyến phải đang `in_progress`; điểm chuyển `collected`.
 - `PATCH /routes/{id}/status`: body `{"status", ...}`. Chuyển trạng thái hợp lệ:
 

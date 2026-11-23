@@ -30,12 +30,24 @@ def test_sweep_splits_evenly_without_losing_bins():
 
 def test_order_beats_fixed_order_and_keeps_every_stop():
     pts = points(50)
-    ordered = rp.order_stops(DEPOT, pts)
+    ordered = rp.order_stops(DEPOT, pts, 20)
     assert sorted(p["code"] for p in ordered) == sorted(p["code"] for p in pts)
     fixed_m, fixed_trips = rp.baseline(DEPOT, pts, 20)
     assert fixed_trips == 3
     # NN + 2-opt on the same bins is far shorter than visiting them by code
     assert rp.trips_distance_m(DEPOT, ordered, 20) < 0.6 * fixed_m
+
+
+def test_road_metric_follows_one_way_streets():
+    depot, a, b = {**DEPOT, "i": 0}, {"lat": 21.01, "lng": 105.85, "i": 1}, \
+        {"lat": 21.02, "lng": 105.83, "i": 2}
+    # one-way loop: depot -> a -> b -> depot is 300 m, the other way round 3 km
+    matrix = [[0, 100, 1000], [1000, 0, 100], [100, 1000, 0]]
+    directed, symmetric = rp.road_metric(matrix)
+    assert symmetric(a, b) == symmetric(b, a) == 550
+    for start in ([a, b], [b, a]):
+        order = rp.order_stops(depot, start, 20, directed, symmetric)
+        assert order == [a, b] and rp.trips_distance_m(depot, order, 20, directed) == 300
 
 
 def test_trips_return_to_depot():

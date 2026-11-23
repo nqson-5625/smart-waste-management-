@@ -17,7 +17,13 @@ FastAPI HTTP API đọc/ghi dữ liệu nghiệp vụ trong MongoDB schema v2. M
 | `ROUTE_MAX_STOPS` | Số điểm tối đa một chuyến; mặc định `20` |
 | `ROUTE_FORECAST` | Lập tuyến cả cho thùng dự báo sẽ tràn trước ca sau; mặc định `true` |
 
+| `OSRM_URL` | Server tính đường bộ; Docker đặt sẵn `http://osrm:5000`. Để trống (mặc định khi chạy bằng venv) thì dùng đường chim bay. Chạy venv mà muốn đường bộ: `http://localhost:5000` |
+
 Các biến tuyến đều có giá trị mặc định, không đặt cũng chạy được (docs/06 mục 3.12).
+
+**Bản đồ đường bộ (OSRM).** Lần `docker compose up` đầu tiên, service `osrm-data` tải bản đồ Việt Nam (~330 MB), cắt riêng khung Hà Nội (`OSRM_BBOX`), rồi `osrm` dựng dữ liệu cho xe ô tô. Các lần sau dùng lại volume `osrm_data`, khởi động ngay. Trong lúc OSRM chưa sẵn sàng, tuyến vẫn lập được bằng đường chim bay (`distance_method = "straight"`). Đổi `OSRM_BBOX` thì phải xóa volume để dựng lại: `docker compose down; docker volume rm smartwastemanagement_osrm_data` (tên volume xem bằng `docker volume ls`).
+
+Profile đường đi là **xe ép rác**: lấy profile ô tô của OSRM, đổi kích thước xe (cao 3,5 m, rộng 2,5 m, dài 8 m, nặng 12 tấn) và bỏ ngõ nhỏ, đường nội bộ (`highway=service`, `living_street`). Thùng trong ngõ được tính như xe đỗ ở đầu ngõ. Chưa tính giờ cấm xe tải nội thành.
 
 ## Chạy bằng Docker (một lệnh)
 
@@ -89,9 +95,10 @@ smartwaste_backend/
 | `api/stats_router.py` + `services/stats_service.py` | `GET /stats/waste-by-type` |
 | `api/users_router.py` + `services/users_service.py` | `POST /users`, `PATCH /users/{id}`, `GET /users` (admin quản lý tài khoản) |
 | `api/collection_events_router.py` + `services/collection_events_service.py` | `POST /collection-events` (có `Idempotency-Key`), `GET /collection-events` |
-| `api/routes_router.py` + `services/routes_service.py` | `POST /routes/generate`, `GET /routes`, `PATCH /routes/{id}/status`: chọn thùng, giao tuyến, chuyển trạng thái |
+| `api/routes_router.py` + `services/routes_service.py` | `POST /routes/generate`, `GET /routes`, `GET /routes/{id}/geometry`, `PATCH /routes/{id}/status`: chọn thùng, giao tuyến, chuyển trạng thái |
 | `api/reports_router.py` | `GET /reports/routes`: km và số chuyến so với lịch cố định, theo ngày |
 | `services/route_planner_service.py` | Thuật toán tuyến, không đụng database: sweep chia vùng, láng giềng gần nhất + 2-opt, cắt chuyến, baseline |
+| `services/osrm_service.py` | Gọi OSRM: bảng khoảng cách đường bộ và đường đi theo phố; trả `None` khi OSRM không sẵn sàng để quay về đường chim bay |
 | `services/audit_service.py` | Ghi `audit_logs` cho thao tác của người dùng (ai, làm gì, request nào) |
 | `services/telemetry_service.py` | Truy vấn lịch sử đo theo `(bin_id, sampled_at, _id)` |
 | `services/projection_service.py` | Quy tắc tính `bin_state` và mở/đóng cảnh báo từ một bản telemetry; `requeue_blocked` đưa bản tin bị chặn về hàng đợi khi có hiệu chuẩn |

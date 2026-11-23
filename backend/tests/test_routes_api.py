@@ -7,7 +7,8 @@ import pytest
 from helpers import ASSIGNMENT, BIN, DEVICE, assert_error, insert_bin, insert_collection, send
 from smartwaste_backend.core.common import to_ms, utcnow
 from smartwaste_backend.jobs import route_worker
-from smartwaste_backend.services import routes_service
+from smartwaste_backend.services import osrm_service, routes_service
+from smartwaste_backend.services import route_planner_service as rp
 
 
 def ready_bin(db, bin_id, fill, now, lng=105.845, lat=21.006, alarm=False, quality="ok",
@@ -218,3 +219,45 @@ def test_list_filters_paging_and_permissions(client, wdb, team):
     assert_error(client.get("/api/v1/reports/routes?from=2026-11-02&to=2026-11-01",
                             headers=admin), 422, "VALIDATION")
     assert_error(client.get("/api/v1/routes"), 401, "UNAUTHORIZED")
+
+
+def test_road_distances_from_osrm(client, wdb, team, monkeypatch):
+    """With OSRM up, routes and baseline use its road matrix (faked: 1.5x straight)."""
+    def fake_matrix(points):
+        return [[1.5 * rp.distance_m(p, q) for q in points] for p in points]
+    monkeypatch.setattr(osrm_service, "distance_matrix", fake_matrix)
+    now = utcnow()
+    ready_bin(wdb, "WB-A", 90, now, lng=105.850, lat=21.010)
+    ready_bin(wdb, "WB-B", 10, now, lng=105.830, lat=20.995)
+    wdb.users.update_one({"_id": "usr-c2"}, {"$set": {"status": "disabled"}})
+    [route] = generate(client, team["admin"])
+    depot = {"lat": route["depot"]["lat"], "lng": route["depot"]["lng"]}
+    stop = route["stops"][0]
+    assert route["distance_method"] == "road"
+    assert route["planned_distance_m"] == round(3 * rp.distance_m(depot, stop))
+    assert wdb.routes.find_one()["baseline_method"].startswith("road ")
+
+
+def test_route_geometry(client, wdb, team, monkeypatch):
+    now = utcnow()
+    ready_bin(wdb, "WB-A", 90, now, lng=105.850, lat=21.010)
+    wdb.users.update_one({"_id": "usr-c2"}, {"$set": {"status": "disabled"}})
+    [route] = generate(client, team["admin"])
+    assert route["distance_method"] == "straight"  # OSRM off in tests
+    url = f"/api/v1/routes/{route['id']}/geometry"
+    depot = [route["depot"]["lng"], route["depot"]["lat"]]
+
+    straight = client.get(url, headers=team["c1"]).json()
+    assert straight["type"] == "LineString" and straight["source"] == "straight"
+    assert straight["coordinates"] == [depot, [105.850, 21.010], depot]
+
+    street = [depot, [105.846, 21.007], [105.850, 21.010], depot]
+    monkeypatch.setattr(osrm_service, "road_path", lambda points: street)
+    road = client.get(url, headers=team["admin"]).json()
+    assert road["source"] == "road" and road["coordinates"] == street
+
+    assert_error(client.get(url, headers=team["c2"]), 401, "UNAUTHORIZED")  # disabled
+    wdb.users.update_one({"_id": "usr-c2"}, {"$set": {"status": "active"}})
+    assert_error(client.get(url, headers=team["c2"]), 403, "FORBIDDEN")  # not their route
+    assert_error(client.get("/api/v1/routes/rt-nope/geometry", headers=team["admin"]),
+                 404, "NOT_FOUND")

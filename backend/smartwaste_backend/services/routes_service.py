@@ -18,7 +18,7 @@ from ..core.common import decode_cursor, encode_cursor, is_fresh, iso, utcnow
 from ..core.config import get_settings
 from ..core.db import get_database, run_transaction
 from ..core.errors import ApiError
-from . import audit_service, route_planner_service, users_service
+from . import audit_service, osrm_service, route_planner_service, users_service
 from .bins_service import JOIN_STATE, LAST_COLLECTION
 
 
@@ -82,6 +82,9 @@ def route_view(route, names, max_stops):
         "stop_count": len(stops),
         "collected_count": sum(stop["status"] == "collected" for stop in stops),
         "trip_count": math.ceil(len(stops) / max_stops),
+        # "road": OSRM street distances; "straight": fallback while OSRM was unavailable
+        "distance_method": ("road" if (route["baseline_method"] or "").startswith("road")
+                            else "straight"),
         "planned_distance_m": route["planned_distance_m"],
         "baseline_distance_m": route["baseline_distance_m"],
         "actual_distance_m": route["actual_distance_m"],
@@ -166,6 +169,21 @@ def pick_bins(database, session, now, settings):
 
 # ---------------------------------------------------------------- generating
 
+def _metric(depot, every):
+    """Distance functions for this run: road metres from OSRM, else straight lines.
+
+    One OSRM table call covers the depot and every active bin, so the routes and the
+    baseline are measured the same way. Points get their matrix index in ``i``.
+    """
+    for index, point in enumerate([depot, *every]):
+        point["i"] = index
+    matrix = osrm_service.distance_matrix([depot, *every])
+    if matrix is None:
+        return route_planner_service.distance_m, None, "straight"
+    directed, symmetric = route_planner_service.road_metric(matrix)
+    return directed, symmetric, "road"
+
+
 def _cancel_unstarted(database, session, now, actor_id, request_id):
     """A new shift replaces routes nobody started; their bins go back into the pool."""
     for route in database.routes.find({"status": {"$in": ["planned", "assigned"]}}, {"_id": 1},
@@ -213,11 +231,12 @@ def generate(now, actor_id, id_prefix, request_id=None, shift_key=None):
                                   {"$set": {"updated_at": now}}, session=session)
 
         collectors = _free_collectors(database, session)
+        dist, symmetric, method = _metric(depot, every)
         sectors = math.ceil(len(bins) / MAX_ROUTE_STOPS)
         routes_stops = route_planner_service.plan(depot, bins, max(len(collectors), sectors),
-                                                  settings.route_max_stops)
+                                                  settings.route_max_stops, dist, symmetric)
         base_m, base_trips = route_planner_service.baseline(depot, every,
-                                                            settings.route_max_stops)
+                                                            settings.route_max_stops, dist)
         routes = []
         for index, stops in enumerate(routes_stops):
             worker = collectors[index] if index < len(collectors) else None
@@ -232,11 +251,12 @@ def generate(now, actor_id, id_prefix, request_id=None, shift_key=None):
                     "completed_at": None, "collection_event_id": None, "skip_reason": None,
                 } for order, stop in enumerate(stops, start=1)],
                 "planned_distance_m": round(route_planner_service.trips_distance_m(
-                    depot, stops, settings.route_max_stops)),
+                    depot, stops, settings.route_max_stops, dist)),
                 "actual_distance_m": None, "actual_distance_source": None,
                 # the whole day's fixed schedule; reports take it once per day, not per route
                 "baseline_distance_m": round(base_m),
-                "baseline_method": f"fixed-code-order bins={len(every)} trips={base_trips}",
+                "baseline_method": (f"{method} fixed-code-order bins={len(every)} "
+                                    f"trips={base_trips}"),
                 "started_at": None, "completed_at": None, "created_by": actor_id,
                 "created_at": now, "updated_at": now,
             })
@@ -279,6 +299,28 @@ def list_routes(viewer, date, status, worker_id, limit, cursor):
     routes = routes[:limit]
     return {"items": _views(database, routes),
             "next_cursor": encode_cursor([routes[-1]["_id"]]) if has_more else None}
+
+
+def route_geometry(route_id, viewer):
+    """The path to draw: depot -> stops -> depot per trip, along the streets when OSRM is up.
+
+    GeoJSON LineString; ``source`` says "road" or "straight" (OSRM unavailable).
+    """
+    route = get_database().routes.find_one({"_id": route_id})
+    if not route:
+        raise ApiError(404, "Không tìm thấy tuyến", {"route_id": route_id})
+    if "admin" not in viewer["roles"] and route["assigned_worker_id"] != viewer["_id"]:
+        raise ApiError(403, "Chỉ xem được tuyến của mình")
+    lng, lat = route["depot"]["coordinates"]
+    depot = {"lat": lat, "lng": lng}
+    stops = [dict(zip(("lng", "lat"), s["location_snapshot"]["coordinates"]))
+             for s in route["stops"]]
+    waypoints = [depot]
+    for trip in route_planner_service.trips(stops, get_settings().route_max_stops):
+        waypoints += [*trip, depot]
+    path = osrm_service.road_path(waypoints)
+    return {"route_id": route_id, "type": "LineString", "source": "road" if path else "straight",
+            "coordinates": path or [[p["lng"], p["lat"]] for p in waypoints]}
 
 
 # ---------------------------------------------------------------- status changes

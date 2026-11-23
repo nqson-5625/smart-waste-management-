@@ -33,6 +33,12 @@ def list_routes(
                                       cursor)
 
 
+@router.get("/{route_id}/geometry")
+def route_geometry(route_id: str, user=Depends(any_user)):
+    """GeoJSON LineString to draw the route on the map, along the streets when possible."""
+    return routes_service.route_geometry(route_id, user)
+
+
 @router.patch("/{route_id}/status")
 def change_status(route_id: str, body: RouteStatusChange, request: Request,
                   user=Depends(any_user)):

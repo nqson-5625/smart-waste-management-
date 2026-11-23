@@ -18,6 +18,7 @@ class Settings:
     route_shift_times: list[str]  # "HH:MM" in Vietnam time, sorted
     route_max_stops: int
     route_forecast: bool
+    osrm_url: str  # road distances; empty means straight-line distances only
 
 
 def _shift_times(raw):
@@ -31,7 +32,10 @@ def _shift_times(raw):
 
 @lru_cache(maxsize=1)
 def get_settings():
-    env = os.environ.get
+    def env(name, default=None):
+        """Unset or empty both mean the default (docker-compose passes empty values)."""
+        return os.environ.get(name) or default
+
     return Settings(
         mongo_uri=env("MONGO_URI", "mongodb://localhost:27017/?directConnection=true"),
         mongo_db=env("MONGO_DB", "smartwaste_v2"),
@@ -46,4 +50,5 @@ def get_settings():
         route_shift_times=_shift_times(env("ROUTE_SHIFT_TIMES", "06:00,14:00")),
         route_max_stops=int(env("ROUTE_MAX_STOPS", "20")),
         route_forecast=env("ROUTE_FORECAST", "true").lower() in ("1", "true", "yes"),
+        osrm_url=env("OSRM_URL", "").rstrip("/"),
     )
