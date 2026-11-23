@@ -58,13 +58,13 @@ function ChangePasswordModal({ onClose }) {
 function Layout() {
   const nav = useNavigate()
   const [showPwd, setShowPwd] = useState(false)
-  if (!auth.token) return <Navigate to="/login" replace />
 
-  // Khôi phục phiên và lấy roles mới nhất từ server
+  // Khôi phục phiên và lấy roles mới nhất từ server - Đặt hook trước các lệnh return
   const { data: me } = useQuery({
     queryKey: ['me'],
     queryFn: () => api('GET', '/auth/me'),
     staleTime: 60000,
+    enabled: !!auth.token,
   })
 
   useEffect(() => {
@@ -73,9 +73,17 @@ function Layout() {
     }
   }, [me])
 
+  if (!auth.token) return <Navigate to="/login" replace />
+
+  // Web chỉ dành cho Admin: Chặn collector trên web để không bị lỗi 403 ở biểu đồ
+  if (!auth.isAdmin) {
+    if (auth.isCollector) return <Navigate to="/m/home" replace />
+    return <Navigate to="/login" replace />
+  }
+
   const logout = () => { auth.clear(); nav('/login') }
   const user = me || auth.user
-  const roleName = auth.isAdmin ? 'Quản trị viên' : (auth.isCollector ? 'Người thu gom' : 'Điều phối viên')
+  const roleName = 'Quản trị viên'
 
   return (
     <div className="shell">

@@ -33,8 +33,15 @@ function DeviceModal({ bin, onClose }) {
   const qc = useQueryClient()
   const [mode, setMode] = useState('existing')
   const [created, setCreated] = useState(false)
-  const [f, setF] = useState({ id: '', hardware_model: '', firmware_version: '', gateways: '', serial_number: '', sensor_model: '', reason: '' })
+  const [f, setF] = useState({
+    id: '', hardware_model: '', firmware_version: '', gateways: '', serial_number: '', sensor_model: '', reason: '',
+    config_rev: 1, empty_distance_mm: 1000, full_distance_mm: 200,
+  })
   const set = k => e => setF({ ...f, [k]: e.target.value })
+  const isConfigValid = mode === 'existing' || (
+    f.config_rev && f.empty_distance_mm && f.full_distance_mm &&
+    Number(f.full_distance_mm) < Number(f.empty_distance_mm)
+  )
   const save = useMutation({
     mutationFn: async () => {
       if (mode === 'new' && !created) {
@@ -45,15 +52,16 @@ function DeviceModal({ bin, onClose }) {
           sensors: [{ sensor_id: 'us-1', type: 'ultrasonic', model: f.sensor_model }],
           ...(f.serial_number ? { serial_number: f.serial_number } : {}),
         })
+        setCreated(true) // Đặt ngay sau bước POST /devices, nếu bước sau lỗi bấm lại không bị 409
+
         // Bước 2: Nạp cấu hình hiệu chuẩn ban đầu (theo mục 3.16 đặc tả)
         await api('POST', `/devices/${f.id}/configs`, {
-          config_rev: 1,
-          empty_distance_mm: 1000,
-          full_distance_mm: 200,
+          config_rev: Number(f.config_rev) || 1,
+          empty_distance_mm: Number(f.empty_distance_mm),
+          full_distance_mm: Number(f.full_distance_mm),
           sample_interval_s: 60,
           report_interval_s: 21600,
         })
-        setCreated(true) // nếu bước gắn lỗi, bấm lại sẽ không đăng ký lần hai
       }
       // Bước 3: Gắn vào thùng
       return api('POST', `/bins/${bin.id}/assignments`, { device_id: f.id, reason: f.reason })
@@ -79,12 +87,26 @@ function DeviceModal({ bin, onClose }) {
             <label>Số serial (không bắt buộc)<input value={f.serial_number} onChange={set('serial_number')} /></label>
           </div>
           <label>Gateway (ngăn cách bằng dấu phẩy)<input value={f.gateways} onChange={set('gateways')} /></label>
+          <div className="row">
+            <label>Revision cấu hình (config_rev)
+              <input type="number" min="1" value={f.config_rev} onChange={set('config_rev')} required />
+            </label>
+            <label>Khoảng cách rỗng (mm)
+              <input type="number" min="1" value={f.empty_distance_mm} onChange={set('empty_distance_mm')} placeholder="1000" required />
+            </label>
+            <label>Khoảng cách đầy (mm)
+              <input type="number" min="1" value={f.full_distance_mm} onChange={set('full_distance_mm')} placeholder="200" required />
+            </label>
+          </div>
+          {Number(f.full_distance_mm) >= Number(f.empty_distance_mm) && (
+            <p className="err" style={{ margin: 0, fontSize: '12px' }}>Khoảng cách đầy phải nhỏ hơn khoảng cách rỗng.</p>
+          )}
         </>}
         <label>Lý do gắn<input value={f.reason} onChange={set('reason')} placeholder="Lắp mới / thay thiết bị hỏng" /></label>
         {save.error && <p className="err">{save.error.status === 409 ? 'Trùng hoặc đang gắn thùng khác: ' : ''}{save.error.message}</p>}
         <div className="actions">
           <button className="btn red" onClick={onClose}>HỦY</button>
-          <button className="btn blue" disabled={save.isPending || !f.id || !f.reason} onClick={() => save.mutate()}>XÁC NHẬN</button>
+          <button className="btn blue" disabled={save.isPending || !f.id || !f.reason || !isConfigValid} onClick={() => save.mutate()}>XÁC NHẬN</button>
         </div>
       </div>
     </div>
@@ -152,7 +174,10 @@ export default function BinDetail() {
             style={{ height: '180px', width: '100%', borderRadius: '4px' }}
             scrollWheelZoom={false}
           >
-            <TileLayer url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="© OpenStreetMap" />
+            <TileLayer
+              url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            />
             <CircleMarker
               center={[b.lat, b.lng]}
               radius={10}

@@ -25,7 +25,7 @@ button { font:inherit; cursor:pointer; } button:disabled { opacity:.5; cursor:de
 .foot { display:flex; align-items:center; justify-content:flex-end; gap:14px; margin-top:16px; } .foot .btn { margin-right:auto; }
 .btn { border:0; border-radius:4px; padding:10px 18px; color:#fff; font-weight:600; } .btn.blue { background:var(--blue); } .btn.red { background:var(--red); }
 p.empty, td.empty { color:#6b7280; text-align:center; padding:24px; } .err { color:var(--red); }
-.overlay { position:fixed; inset:0; background:rgba(0,0,0,.4); display:grid; place-items:center; padding:16px; overflow:auto; }
+.overlay { position:fixed; inset:0; background:rgba(0,0,0,.4); display:grid; place-items:center; padding:16px; overflow:auto; z-index: 2000; }
 .modal { background:#fff; border-radius:8px; width:min(560px,100%); padding:20px 24px; display:grid; gap:12px; }
 .modal h3 { margin:0; text-align:center; color:var(--blue); }
 label { display:grid; gap:4px; font-size:13px; color:#6b7280; flex:1; }

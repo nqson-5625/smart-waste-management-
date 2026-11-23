@@ -1,7 +1,7 @@
-import { useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { ArrowLeft, Check } from 'lucide-react'
 import { api } from '../api'
 import ImagePlaceholder from './ImagePlaceholder'
 
@@ -136,10 +136,37 @@ function DaysComboChart({ data = DAYS_DATA }) {
 export default function MobileBinDetail() {
   const { id } = useParams()
   const nav = useNavigate()
+  const qc = useQueryClient()
+
+  // Một UUID duy nhất cho mỗi lượt bấm thu gom, nếu thử lại sẽ tái sử dụng đúng UUID này
+  const [idempotencyKey] = useState(() => (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `col-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`))
+  const [collectedMsg, setCollectedMsg] = useState('')
 
   const { data: bin, isLoading } = useQuery({
     queryKey: ['bin', id],
     queryFn: () => api('GET', `/bins/${id}`),
+  })
+
+  // Gọi POST /collection-events theo docs/06 mục 3.10
+  const collectMutation = useMutation({
+    mutationFn: () => {
+      return api(
+        'POST',
+        '/collection-events',
+        {
+          bin_id: id,
+          completed_at: new Date().toISOString(),
+        },
+        {
+          'Idempotency-Key': idempotencyKey,
+        }
+      )
+    },
+    onSuccess: () => {
+      setCollectedMsg('Đã ghi nhận thu gom thành công! Đang chờ cảm biến đo lại.')
+      qc.invalidateQueries({ queryKey: ['bin', id] })
+      qc.invalidateQueries({ queryKey: ['bins'] })
+    },
   })
 
   // Định dạng ngày hôm nay (04/01/2023 như mẫu hoặc ngày thực tế)
@@ -153,6 +180,11 @@ export default function MobileBinDetail() {
 
   const fillPct = bin?.state?.fill_pct != null ? Math.round(bin.state.fill_pct) : 75
   const address = bin?.address || '12 Ngo Quyen street, Hoang Mai, HN'
+  const isRecentlyCollected = !!(
+    collectedMsg ||
+    (bin?.state?.last_collected_at &&
+      (!bin?.state?.sampled_at || new Date(bin.state.last_collected_at) > new Date(bin.state.sampled_at)))
+  )
 
   return (
     <div className="m-detail-container">
@@ -187,6 +219,46 @@ export default function MobileBinDetail() {
       <div className="m-detail-status-row">
         <div className="m-detail-date">Today: {todayStr}</div>
         <div className="m-detail-big-pct">{fillPct}%</div>
+      </div>
+
+      {/* Nút Đã thu / Xác nhận thu gom */}
+      <div style={{ marginTop: 16, marginBottom: 16 }}>
+        {isRecentlyCollected ? (
+          <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: 12, padding: '12px 16px', color: '#065f46', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Check size={18} strokeWidth={2.5} color="#059669" />
+            <span>{collectedMsg || 'Đã thu gom, chờ cảm biến xác nhận'}</span>
+          </div>
+        ) : (
+          <button
+            onClick={() => collectMutation.mutate()}
+            disabled={collectMutation.isPending}
+            style={{
+              width: '100%',
+              padding: '14px 20px',
+              background: '#2e7d32',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: 14,
+              fontSize: 15,
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              boxShadow: '0 4px 12px rgba(46,125,50,0.3)',
+              cursor: collectMutation.isPending ? 'not-allowed' : 'pointer',
+              opacity: collectMutation.isPending ? 0.7 : 1,
+            }}
+          >
+            <Check size={20} strokeWidth={2.5} />
+            <span>{collectMutation.isPending ? 'Đang gửi xác nhận…' : 'Đã thu gom thùng này'}</span>
+          </button>
+        )}
+        {collectMutation.error && (
+          <p style={{ color: '#dc2626', fontSize: 12, marginTop: 6, textAlign: 'center' }}>
+            {collectMutation.error.message || 'Không thể ghi nhận thu gom. Vui lòng thử lại.'}
+          </p>
+        )}
       </div>
 
       {/* Biểu đồ Days (D1 -> D10) */}

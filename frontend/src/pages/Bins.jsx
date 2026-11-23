@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { MapContainer, TileLayer, CircleMarker, Popup, useMapEvents } from 'react-leaflet'
 import { Link } from 'react-router-dom'
-import { api, auth } from '../api'
+import { api, auth, fetchAllBins } from '../api'
 
 const CENTER = [21.005, 105.8442] // [lat, lng] cho Leaflet
 export const WASTE = { general: 'Rác thường', organic: 'Hữu cơ', recyclable: 'Tái chế', hazardous: 'Nguy hại', other: 'Khác' }
@@ -60,7 +60,10 @@ function BinModal({ bin, onClose }) {
         <label>Địa chỉ<input value={f.address} onChange={set('address')} /></label>
         <p className="hint">Bấm lên bản đồ để chọn vị trí ({pos[0].toFixed(5)}, {pos[1].toFixed(5)})</p>
         <MapContainer center={pos} zoom={16} className="map">
-          <TileLayer url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="© OpenStreetMap" />
+          <TileLayer
+            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+          />
           <Picker pos={pos} onPick={setPos} />
         </MapContainer>
         {save.error && <p className="err">{save.error.status === 409 ? 'Mã thùng đã tồn tại.' : save.error.message}</p>}
@@ -77,7 +80,7 @@ export default function Bins() {
   const qc = useQueryClient()
   const isAdmin = auth.isAdmin
   const { data, isLoading, error } = useQuery({
-    queryKey: ['bins'], queryFn: () => api('GET', '/bins?status=active&limit=100'), refetchInterval: 30000,
+    queryKey: ['bins'], queryFn: () => fetchAllBins('status=active'), refetchInterval: 30000,
   })
   const [view, setView] = useState('table') // 'table' | 'map'
   const [focusBin, setFocusBin] = useState(null)
@@ -156,7 +159,10 @@ export default function Bins() {
             zoom={focusBin ? 17 : 15}
             style={{ height: '520px', width: '100%', borderRadius: '6px' }}
           >
-            <TileLayer url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="© OpenStreetMap" />
+            <TileLayer
+              url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            />
             {items.map(b => {
               const s = binStatus(b)
               const c = STATUS_COLORS[s.key] || STATUS_COLORS.none

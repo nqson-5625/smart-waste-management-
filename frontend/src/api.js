@@ -5,7 +5,6 @@ export const auth = {
   get token() { return localStorage.getItem('sw_token') },
   get user() { try { return JSON.parse(localStorage.getItem('sw_user')) } catch { return null } },
   get isAdmin() { return this.user?.roles?.includes('admin') ?? false },
-  get isDispatcher() { return this.user?.roles?.includes('dispatcher') ?? false },
   get isCollector() { return this.user?.roles?.includes('collector') ?? false },
   set(t, u) { localStorage.setItem('sw_token', t); localStorage.setItem('sw_user', JSON.stringify(u)) },
   clear() { localStorage.removeItem('sw_token'); localStorage.removeItem('sw_user') },
@@ -13,7 +12,7 @@ export const auth = {
 
 // Lỗi backend: {code, message, request_id, details} -> ném Error có status/code/details
 export async function api(method, path, body, headers = {}) {
-  if (MOCK) return mock(method, path, body)
+  if (MOCK) return mock(method, path, body, headers)
   const res = await fetch(BASE + path, {
     method,
     headers: { 'Content-Type': 'application/json', ...(auth.token ? { Authorization: `Bearer ${auth.token}` } : {}), ...headers },
@@ -23,6 +22,22 @@ export async function api(method, path, body, headers = {}) {
   const data = await res.json().catch(() => null)
   if (!res.ok) throw Object.assign(new Error(data?.message || res.statusText), { status: res.status, code: data?.code, details: data?.details })
   return data
+}
+
+// Lặp theo next_cursor tới khi null để lấy đầy đủ thùng rác (tránh sót khi > 100 thùng)
+export async function fetchAllBins(query = 'status=active') {
+  let allItems = []
+  let cursor = null
+  for (let page = 0; page < 20; page++) {
+    const sep = query ? (query.includes('?') ? '&' : '&') : ''
+    const q = `${query ? query + sep : ''}limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`
+    const res = await api('GET', `/bins${q ? '?' + q.replace(/^\?+/, '') : ''}`)
+    const list = res?.items || []
+    allItems = [...allItems, ...list]
+    if (!res?.next_cursor || list.length < 100) break
+    cursor = res.next_cursor
+  }
+  return { items: allItems }
 }
 
 /* ---------- Dữ liệu giả, bám đúng đặc tả v0.1 ---------- */
@@ -42,7 +57,7 @@ const alertsOf = () => bins.filter(x => x.state?.alarm_active).map(x => ({
   scope_id: x.id, bin_id: x.id, opened_at: new Date(Date.now() - 3600e3).toISOString(), acknowledged_at: null, acknowledged_by: null, resolved_at: null, resolve_reason: null,
 }))
 
-async function mock(m, p, b) {
+async function mock(m, p, b, h = {}) {
   await new Promise(r => setTimeout(r, 150))
   const [path, qs] = p.split('?'); const q = new URLSearchParams(qs); const seg = path.split('/')
   if (path === '/auth/login') {
@@ -111,6 +126,23 @@ async function mock(m, p, b) {
   }
   if (seg[1] === 'alerts' && seg[3] === 'ack') {
     acked.add(seg[2]); return { ...alertsOf().find(a => a.id === seg[2]), status: 'acknowledged', acknowledged_at: new Date().toISOString() }
+  }
+  if (path === '/collection-events' && m === 'POST') {
+    const key = h?.['Idempotency-Key'] || h?.['idempotency-key']
+    const bin = bins.find(x => x.id === b?.bin_id)
+    if (bin && bin.state) {
+      bin.state.last_collected_at = b?.completed_at || new Date().toISOString()
+      bin.state.fill_pct = 0
+      bin.state.alarm_active = false
+    }
+    return {
+      id: 'col-' + Date.now(),
+      bin_id: b?.bin_id,
+      worker_id: auth.user?.id || 'u2',
+      worker_name: auth.user?.display_name || 'Nguyễn Văn Gom',
+      completed_at: b?.completed_at || new Date().toISOString(),
+      idempotency_key: key || null,
+    }
   }
   if (path === '/stats/waste-by-type') return {
     items: [

@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { MapContainer, TileLayer, Circle, Marker, Popup, Polyline, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import { ArrowLeft, ArrowRight, Truck, Trash2, Navigation } from 'lucide-react'
-import { api, auth } from '../api'
+import { api, auth, fetchAllBins } from '../api'
 import ImagePlaceholder from './ImagePlaceholder'
 
 // Fix icon default Leaflet khi đóng gói Vite
@@ -108,10 +108,10 @@ export default function MobileMap() {
   const [searchParams, setSearchParams] = useSearchParams()
   const mode = searchParams.get('mode') || 'truck' // 'truck' | 'bins'
 
-  // Lấy dữ liệu thùng rác từ API
+  // Lấy dữ liệu thùng rác từ API (lặp theo next_cursor lấy đủ toàn bộ)
   const { data } = useQuery({
     queryKey: ['bins'],
-    queryFn: () => api('GET', '/bins?status=active&limit=100'),
+    queryFn: () => fetchAllBins('status=active'),
     refetchInterval: 30000,
   })
 
@@ -218,8 +218,8 @@ export default function MobileMap() {
           style={{ width: '100%', height: '100%' }}
         >
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-            url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
           />
 
           <MapFixer center={centerPos} />

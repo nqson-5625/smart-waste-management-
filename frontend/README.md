@@ -9,7 +9,7 @@
 - **Công cụ đóng gói (Bundler):** Vite 6 (tốc độ khởi động miligiây, hot-reload tức thì).
 - **Điều hướng (Routing):** `react-router-dom` v6 / v7.
 - **Quản lý dữ liệu & Cache:** `@tanstack/react-query` v5 (tự động fetch, cache và polling 30 giây).
-- **Bản đồ:** `leaflet` + `react-leaflet` (nền OpenStreetMap, ghim tọa độ và đổi màu trạng thái).
+- **Bản đồ:** `leaflet` + `react-leaflet` (nền bản đồ CARTO Voyager, ghim tọa độ và đổi màu trạng thái).
 - **PWA (Progressive Web App):** `vite-plugin-pwa` (hỗ trợ cài đặt như app độc lập trên máy tính/điện thoại).
 
 ---
@@ -22,7 +22,7 @@
 ### Cài đặt thư viện
 Mở terminal và di chuyển vào thư mục `frontend`:
 ```powershell
-cd f:\smart-waste-management\frontend
+cd frontend
 npm install
 ```
 
@@ -54,7 +54,7 @@ npm install
 *Khi muốn kiểm thử luồng thực tế với dữ liệu từ cơ sở dữ liệu MongoDB và cảm biến thật.*
 
 1. **Khởi động Backend & Docker:**
-   Mở terminal tại thư mục gốc `f:\smart-waste-management`:
+   Mở terminal tại thư mục gốc của dự án:
    ```powershell
    docker compose up -d --build
    docker compose run --rm api python -m smartwaste_backend.scripts.seed_users
@@ -76,9 +76,9 @@ npm install
    ```
 
 4. **Tài khoản đăng nhập Backend thật:**
-   - **Quản trị viên (Admin):** `admin@smartwaste.local`
-   - **Điều phối viên (Dispatcher):** `dispatcher@smartwaste.local`
-   - **Mật khẩu:** giá trị trong biến `DEMO_PASSWORD` ở file `.env` gốc (mặc định trong `.env.example`).
+   - **Quản trị viên (Admin - Web):** `admin@smartwaste.local`
+   - **Người thu gom (Collector - Mobile PWA):** `collector@smartwaste.local`
+   - **Mật khẩu:** giá trị trong biến `DEMO_PASSWORD` ở file `.env` gốc (tự đặt tối thiểu 8 ký tự, ví dụ: `DEMO_PASSWORD=admin123456`).
 
 ---
 
@@ -113,7 +113,7 @@ Khi người dùng bấm vào một Marker trên bản đồ, popup sẽ hiển 
 
 ## 4. Các tính năng chính trên Web
 1. **Trang Đăng nhập (`/login`):** Xác thực JWT, lưu phiên đăng nhập 8 giờ.
-2. **Khôi phục phiên & Phân quyền (`GET /auth/me`):** Tự động nhận diện vai trò `admin` hoặc `dispatcher`. Ẩn các nút quản trị đối với `dispatcher`.
+2. **Khôi phục phiên & Phân quyền (`GET /auth/me`):** Tự động nhận diện vai trò `admin`. Chặn tài khoản `collector` đăng nhập web và hướng dẫn chuyển sang Mobile PWA.
 3. **Danh sách thùng rác (`/bins`):** Xem bảng danh sách, mức đầy %, cờ cảnh báo lỗi cảm biến, phân trang và tự động polling cập nhật mỗi 30 giây.
 4. **Chi tiết thùng rác (`/bins/:id`):** 
    - Thông tin vị trí, thông số kỹ thuật.
