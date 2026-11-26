@@ -28,6 +28,13 @@ def user_view(user):
     }
 
 
+def display_names(database, user_ids, session=None):
+    """{user id: display name} for showing who collected or who holds a route."""
+    users = database.users.find({"_id": {"$in": list(user_ids)}}, {"display_name": 1},
+                                session=session)
+    return {user["_id"]: user["display_name"] for user in users}
+
+
 def create_user(body, admin, request_id):
     """Create an active account. Emails are unique regardless of case."""
     database = get_database()

@@ -12,6 +12,7 @@ import pytest
 os.environ["MONGO_DB"] = "smartwaste_test"
 os.environ.setdefault("MONGO_URI", "mongodb://localhost:27017/?directConnection=true")
 os.environ.setdefault("JWT_SECRET", "test-secret-not-for-production-use-0123456789")
+os.environ["OSRM_URL"] = ""  # tests never call a real OSRM; road distances are faked per test
 
 from fastapi.testclient import TestClient  # noqa: E402
 

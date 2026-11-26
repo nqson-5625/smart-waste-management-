@@ -103,6 +103,13 @@ services:
       JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-jwt-secret}
       DEMO_PASSWORD: ${DEMO_PASSWORD:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      # Collection routes; empty means the backend default (backend/README.md).
+      OSRM_URL: ${OSRM_URL:-http://osrm:5000}
+      DEPOT_LAT: ${DEPOT_LAT:-}
+      DEPOT_LNG: ${DEPOT_LNG:-}
+      ROUTE_SHIFT_TIMES: ${ROUTE_SHIFT_TIMES:-}
+      ROUTE_MAX_STOPS: ${ROUTE_MAX_STOPS:-}
+      ROUTE_FORECAST: ${ROUTE_FORECAST:-}
     ports:
       - "127.0.0.1:${API_PORT:-8000}:8000"
     healthcheck:
@@ -124,7 +131,69 @@ services:
       db-seed:
         condition: service_completed_successfully
 
+  # Road distances for collection routes (docs/06 section 3.12). The first start downloads
+  # the Vietnam map (~330 MB), keeps only the Hanoi box and builds it; later starts reuse it.
+  # The backend falls back to straight-line distances while OSRM is not ready.
+  # Changing OSRM_BBOX needs a rebuild: docker compose down && docker volume rm <project>_osrm_data
+  osrm-data:
+    image: debian:bookworm-slim
+    command:
+      - sh
+      - -ec
+      - |
+        if [ -f /data/hanoi.osm.pbf ]; then echo "map ready"; exit 0; fi
+        apt-get update -qq
+        apt-get install -y -qq --no-install-recommends ca-certificates curl osmium-tool > /dev/null
+        curl -fL --retry 3 -o /data/vietnam.osm.pbf "$$OSRM_MAP_URL"
+        osmium extract -b "$$OSRM_BBOX" -o /data/hanoi.tmp.pbf --overwrite /data/vietnam.osm.pbf
+        rm /data/vietnam.osm.pbf
+        mv /data/hanoi.tmp.pbf /data/hanoi.osm.pbf
+    environment:
+      OSRM_MAP_URL: ${OSRM_MAP_URL:-https://download.geofabrik.de/asia/vietnam/vietnam-latest.osm.pbf}
+      OSRM_BBOX: ${OSRM_BBOX:-105.70,20.90,106.00,21.15}  # lng_min,lat_min,lng_max,lat_max
+    volumes:
+      - osrm_data:/data
+    restart: "no"
+
+  # Garbage-truck profile = OSRM car profile with a ~12 t compactor's size, and without
+  # alleys and service roads (highway=service, living_street): the truck stops at the
+  # alley mouth, which is where a stop inside an alley gets snapped to.
+  osrm:
+    image: ghcr.io/project-osrm/osrm-backend:v5.27.1
+    command:
+      - sh
+      - -ec
+      - |
+        sed -e 's/vehicle_height = 2.0/vehicle_height = 3.5/' \
+            -e 's/vehicle_width = 1.9/vehicle_width = 2.5/' \
+            -e 's/vehicle_length = 4.8/vehicle_length = 8.0/' \
+            -e 's/vehicle_weight = 2000/vehicle_weight = 12000/' \
+            -e '/^ *living_street *= 10,/d' -e '/^ *service *= 15/d' \
+            /opt/car.lua > /opt/truck.lua
+        grep -q 'vehicle_weight = 12000' /opt/truck.lua
+        if grep -qE '^ *(service *= 15|living_street *= 10,)' /opt/truck.lua; then
+          echo "truck profile edit failed: car.lua changed"; exit 1
+        fi
+        cd /data
+        if [ ! -f hanoi-truck.osrm.cell_metrics ]; then
+          rm -f hanoi.osrm* hanoi-truck.osrm*
+          ln -sf hanoi.osm.pbf hanoi-truck.osm.pbf
+          osrm-extract -p /opt/truck.lua hanoi-truck.osm.pbf
+          osrm-partition hanoi-truck.osrm
+          osrm-customize hanoi-truck.osrm
+        fi
+        exec osrm-routed --algorithm mld --max-table-size 1000 hanoi-truck.osrm
+    ports:
+      - "127.0.0.1:${OSRM_PORT:-5000}:5000"
+    volumes:
+      - osrm_data:/data
+    restart: unless-stopped
+    depends_on:
+      osrm-data:
+        condition: service_completed_successfully
+
 volumes:
   mongo_data:
   mosquitto_data:
   mosquitto_log:
+  osrm_data:

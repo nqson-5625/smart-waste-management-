@@ -18,7 +18,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .api import (
     alerts_router, auth_router, bin_photos_router, bins_router, collection_events_router,
-    devices_router, stats_router, users_router,
+    devices_router, reports_router, routes_router, stats_router, users_router,
 )
 from .core.config import get_settings
 from .core.db import get_database
@@ -106,4 +106,6 @@ api.include_router(alerts_router.router)
 api.include_router(stats_router.router)
 api.include_router(users_router.router)
 api.include_router(collection_events_router.router)
+api.include_router(routes_router.router)
+api.include_router(reports_router.router)
 app.include_router(api)
