@@ -135,7 +135,7 @@ export default function MobileMap() {
       : null
   })
 
-  // Khi thay đổi mode từ URL hoặc toggle
+  // Khi thay đổi mode từ URL hoặc khi danh sách thùng lần đầu được nạp (tránh giật map khi polling 30s)
   useEffect(() => {
     if (mode === 'truck') {
       setSelectedEntity({
@@ -145,10 +145,16 @@ export default function MobileMap() {
         driver: auth.user?.display_name || 'Nguyễn Văn Gom',
       })
     } else if (bins.length > 0) {
-      const defaultBin = bins.find((b) => Math.round(b.state?.fill_pct || 0) === 60) || bins[0]
-      setSelectedEntity({ type: 'bin', data: defaultBin })
+      setSelectedEntity((prev) => {
+        if (prev?.type === 'bin' && prev.data?.id) {
+          const updated = bins.find((b) => b.id === prev.data.id)
+          return updated ? { type: 'bin', data: updated } : prev
+        }
+        const defaultBin = bins.find((b) => Math.round(b.state?.fill_pct || 0) === 60) || bins[0]
+        return { type: 'bin', data: defaultBin }
+      })
     }
-  }, [mode, bins])
+  }, [mode, bins.length > 0])
 
   // Lộ trình thu gom: Nối từ xe rác qua các thùng cần gom (fill_pct >= 50% hoặc alarm)
   const routePoints = useMemo(() => {
