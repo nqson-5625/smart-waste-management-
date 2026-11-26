@@ -8,6 +8,15 @@ import BinDetail from './pages/BinDetail'
 import Stats from './pages/Stats'
 import AlertBell from './components/AlertBell'
 
+// Mobile PWA Pages
+import MobileLayout from './mobile/MobileLayout'
+import SplashScreen from './mobile/SplashScreen'
+import OnboardingScreen from './mobile/OnboardingScreen'
+import MobileLogin from './mobile/MobileLogin'
+import MobileHome from './mobile/MobileHome'
+import MobileMap from './mobile/MobileMap'
+import MobileBinDetail from './mobile/MobileBinDetail'
+
 function Crumb() {
   const { pathname } = useLocation()
   if (pathname.startsWith('/bins/')) return <nav className="crumb">Trang chủ / <Link to="/bins">Xem lượng rác</Link> / <b>Chi tiết thùng</b></nav>
@@ -49,13 +58,13 @@ function ChangePasswordModal({ onClose }) {
 function Layout() {
   const nav = useNavigate()
   const [showPwd, setShowPwd] = useState(false)
-  if (!auth.token) return <Navigate to="/login" replace />
 
-  // Khôi phục phiên và lấy roles mới nhất từ server
+  // Khôi phục phiên và lấy roles mới nhất từ server - Đặt hook trước các lệnh return
   const { data: me } = useQuery({
     queryKey: ['me'],
     queryFn: () => api('GET', '/auth/me'),
     staleTime: 60000,
+    enabled: !!auth.token,
   })
 
   useEffect(() => {
@@ -64,8 +73,17 @@ function Layout() {
     }
   }, [me])
 
+  if (!auth.token) return <Navigate to="/login" replace />
+
+  // Web chỉ dành cho Admin: Chặn collector trên web để không bị lỗi 403 ở biểu đồ
+  if (!auth.isAdmin) {
+    if (auth.isCollector) return <Navigate to="/m/home" replace />
+    return <Navigate to="/login" replace />
+  }
+
   const logout = () => { auth.clear(); nav('/login') }
   const user = me || auth.user
+  const roleName = 'Quản trị viên'
 
   return (
     <div className="shell">
@@ -80,8 +98,11 @@ function Layout() {
         <header className="top">
           <Crumb />
           <div className="top-r">
+            <Link to="/m/home" style={{ color: '#2e7d32', fontWeight: 700, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4, background: '#e8f5e9', padding: '6px 12px', borderRadius: 20 }}>
+              📱 Xem Mobile PWA
+            </Link>
             <AlertBell />
-            <span>{user?.display_name}</span>
+            <span>{user?.display_name} <small style={{ color: '#6b7280', fontSize: '12px' }}>({roleName})</small></span>
             <button className="link" onClick={() => setShowPwd(true)}>Đổi mật khẩu</button>
             <button className="link" onClick={logout}>Đăng xuất</button>
           </div>
@@ -96,6 +117,18 @@ function Layout() {
 export default function App() {
   return (
     <Routes>
+      {/* Các tuyến đường Mobile PWA */}
+      <Route path="/m" element={<MobileLayout />}>
+        <Route index element={<Navigate to="/m/splash" replace />} />
+        <Route path="splash" element={<SplashScreen />} />
+        <Route path="onboarding" element={<OnboardingScreen />} />
+        <Route path="login" element={<MobileLogin />} />
+        <Route path="home" element={<MobileHome />} />
+        <Route path="map" element={<MobileMap />} />
+        <Route path="bins/:id" element={<MobileBinDetail />} />
+      </Route>
+
+      {/* Tuyến đường Web Desktop */}
       <Route path="/login" element={<Login />} />
       <Route element={<Layout />}>
         <Route path="/" element={<Navigate to="/bins" replace />} />
